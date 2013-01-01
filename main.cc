@@ -17,30 +17,12 @@ int main(void) {
 	printf("RepRap Bed Level Tool by Berend Dekens\n");
 	if(serial_open() < 0) return -1;
 	printf("Opened serial port\n");
-//
-//	printf("Homing all axis\n");
-//	home_xyz();
-//	//home_z();
-//	printf("Homing complete\n");
-//	set_speed(4000);
-//
-//	for(int i=0;i<3;i++) {
-//		printf("Moving Z\n");
-//		_(set_z(10,1));
-//		_(set_dwell(0));
-//		printf("Doing square\n");
-//		_(set_x(100));
-//		_(set_y(100));
-//		_(set_x(0));
-//		_(set_y(0));
-//		_(set_dwell(0));
-//		printf("Move complete\n");
-//		sleep(5);
-//	}
-//	home_xyz();
 
 	calibratez_heightloop();
-	sleep(10);
+
+	// Send a barrier command to the printer before shutting down
+	set_dwell(100);
+	// Close the serial port
 	serial_close();
 }
 

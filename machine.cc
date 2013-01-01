@@ -7,6 +7,7 @@
 
 #include <stdio.h>
 #include <curses.h>
+#include "main.h"
 #include "serial.h"
 #include "machine.h"
 
@@ -74,7 +75,6 @@ int set_position(float xval, float yval, float zval, int relative, float speedva
 	if(cz) ptr += snprintf(&buf[ptr], 100-ptr,"Z%.2f ", z);
 	if(cs) ptr += snprintf(&buf[ptr], 100-ptr,"F%.2f ", speed);
 	ptr += snprintf(&buf[ptr], 100-ptr,"\n");
-	//printf("Serial command: '%s'", buf);
 	return serial_cmd(buf, NULL);
 }
 

@@ -17,7 +17,7 @@
 // Safety features: define some limits to prevent sending insane commands to the printer
 #define MAX_X 183.0f
 #define MIN_X 0.0f
-#define MAX_Y 190.0f
+#define MAX_Y 180.0f
 #define MIN_Y 0.0f
 #define MAX_Z 140.0f
 #define MIN_Z 0.0f

@@ -23,6 +23,7 @@ float zoffset = -7.0f;		// The offset of the Z axis using G92, this allows us to
 
 void print_instructions(WINDOW *wnd, int base_corner = 0);
 void print_instructions_avg(WINDOW *wnd);
+void print_instructions_3corners(WINDOW *wnd);
 
 
 void destroy_win(WINDOW *local_win)
@@ -251,7 +252,7 @@ int calibratez_heightloop() {
 
 				{
 					int bc = 0;
-					if(!utility_ask_int(cmd_win, "Which corner should be stationary? 1 to 4, 5 for average?", &bc, 1, 1, 5, 1)) {
+					if(!utility_ask_int(cmd_win, "Which corner should be stationary?\n1 to 4, 5 for average or 6 for three corners?", &bc, 1, 1, 6, 1)) {
 						// Abort the calculation
 						break;
 					}
@@ -259,13 +260,14 @@ int calibratez_heightloop() {
 					if(bc >= 1 && bc <= 4)
 						// Use one corner as a fixed point
 						print_instructions(cmd_win, bc-1);
-					else
+					else if(bc == 5)
 						// Use the average between all corners
 						print_instructions_avg(cmd_win);
+					else
+						// Level the bed using 3 screws and one floating side
+						print_instructions_3corners(cmd_win);
 				}
 
-				// Erase the z positioning as the user will attempt to modify the alignment
-				for(int i=0;i<4;i++) zpos[i] = -zoffset;
 				// Move the head and present the bed
 				set_z(-zoffset);
 				set_position(0,0,-zoffset,0,xyspeed);
@@ -311,9 +313,13 @@ int calibratez_heightloop() {
 				case '4':
 				case KEY_F4:
 				case KEY_F5:
-					wprintw(cmd_win, "Motor hold disabled, press F6 to power on and home all axis\n");
+					wprintw(cmd_win, "Motor hold disabled, press F6 to restart and home all axis or F7 to home and retain each corner\n");
 					break;
 				case KEY_F6:
+					// Erase the Z positioning to go back to the Z home point
+					for(int i=0;i<4;i++) zpos[i] = -zoffset;
+					/* no break */
+				case KEY_F7:
 					// Disable the flag to return to normal alignment mode
 					nopower = 0;
 					// Tell the user what we are doing
@@ -321,6 +327,8 @@ int calibratez_heightloop() {
 					home_xyz();
 					// Override the Z offset again
 					override_zpos(-zoffset);
+					// We are back at position 1
+					pos = 0;
 					// Ready for another round
 					wprintw(cmd_win, "Ready\n");
 				default: // Unknown keypress
@@ -430,6 +438,92 @@ void print_instructions_avg(WINDOW *wnd) {
 		wprintw(wnd, "Corner 3: delta %.2f mm - turn screw %.2f times %s\n", zpos[2]-avg, angle, dir);
 	}
 	{
+		const char *dir = (zpos[3] < avg) ? left : right;
+		float angle = ((zpos[3] - avg) / M4_pitch);
+		if(angle < 0) angle = -angle;
+		wprintw(wnd, "Corner 4: delta %.2f mm - turn screw %.2f times %s\n", zpos[3]-avg, angle, dir);
+	}
+}
+
+/**
+ * Special alignment mode: 3 corners (4th has no screw).
+ * We align this by averaging the Z between the orthogonal diagonal corners and
+ * raising the 3rd point to this Z as well. The 4th corner should follow suit.
+ */
+void print_instructions_3corners(WINDOW *wnd) {
+	// Find the maximum and minimum of all 4 corners
+	const char *left = "left";
+	const char *right = "right";
+	float avg = 0.0f, p1 = 0.0f, p2 = 0.0f;
+
+	// Which corner is floating
+	int open = 0, mode = 3;
+	if(!utility_ask_int(wnd, "Which corner is floating?", &open, 2, 1, 4, 1)) {
+		// Abort the instructions
+		return;
+	}
+	open--;		// We index from 0
+	if(!utility_ask_int(wnd, "Optimize diagonal using 1:lowest point, 2:average, 3:highest point?", &mode, 2, 1, 3, 1)) {
+		// Abort the instructions
+		return;
+	}
+
+	wprintw(wnd, "Taking corner %d as floating\n", open+1);
+
+	// Determine the average
+	switch(open) {
+	case 0:
+		// Corner 1, use 2 and 4
+	case 2:
+		// Corner 3, use 2 and 4
+		p1 = zpos[1];
+		p2 = zpos[3];
+		break;
+	case 1:
+		// Corner 2, use 1 and 3
+	default:
+		// Corner 4, use 1 and 3
+		p1 = zpos[0];
+		p2 = zpos[2];
+		break;
+	}
+
+	// Determine the target height for all 3 (4) corners
+	switch(mode) {
+	case 1:
+		wprintw(wnd, "Using the lowest point on the diagonal\n");
+		if(p1 < p2) avg = p1; else avg = p2;
+		break;
+	case 2:
+		wprintw(wnd, "Using the average between both points on the diagonal\n");
+		avg = (p1 + p2) * 0.5f;
+		break;
+	case 3:
+	default:
+		wprintw(wnd, "Using the highest point on the diagonal\n");
+		if(p1 > p2) avg = p1; else avg = p2;
+		break;
+	}
+
+	if(open!=0){
+		const char *dir = (zpos[0] < avg) ? left : right;
+		float angle = ((zpos[0] - avg) / M4_pitch);
+		if(angle < 0) angle = -angle;
+		wprintw(wnd, "Corner 1: delta %.2f mm - turn screw %.2f times %s\n", zpos[0]-avg, angle, dir);
+	}
+	if(open!=1){
+		const char *dir = (zpos[1] < avg) ? left : right;
+		float angle = ((zpos[1] - avg) / M4_pitch);
+		if(angle < 0) angle = -angle;
+		wprintw(wnd, "Corner 2: delta %.2f mm - turn screw %.2f times %s\n", zpos[1]-avg, angle, dir);
+	}
+	if(open!=2){
+		const char *dir = (zpos[2] < avg) ? left : right;
+		float angle = ((zpos[2] - avg) / M4_pitch);
+		if(angle < 0) angle = -angle;
+		wprintw(wnd, "Corner 3: delta %.2f mm - turn screw %.2f times %s\n", zpos[2]-avg, angle, dir);
+	}
+	if(open!=3){
 		const char *dir = (zpos[3] < avg) ? left : right;
 		float angle = ((zpos[3] - avg) / M4_pitch);
 		if(angle < 0) angle = -angle;

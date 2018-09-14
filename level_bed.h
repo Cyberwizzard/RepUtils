@@ -1,12 +1,12 @@
 /*
- * calibratez.h
+ * level_bed.h
  *
  *  Created on: Dec 6, 2012
  *      Author: cyberwizzard
  */
 
-#ifndef CALIBRATEZ_H_
-#define CALIBRATEZ_H_
+#ifndef LEVEL_BED_H_
+#define LEVEL_BED_H_
 
 //#define KEY_DOWN 258
 //#define KEY_UP 259
@@ -25,7 +25,7 @@
 #define KEY_F11 275
 #define KEY_F12 276
 
-int calibratez_heightloop();
+int level_bed_heightloop();
 
 
-#endif /* CALIBRATEZ_H_ */
+#endif /* LEVEL_BED_H_ */

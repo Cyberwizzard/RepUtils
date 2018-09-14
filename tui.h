@@ -37,10 +37,12 @@ extern WINDOW *cmd_win;			// Window to hold and show the commands for the progra
 		abort(); \
 	}
 
+typedef void (*t_print_status_bar)(int,int);
+
 /**
  * Load curses and create all windows
  */
-void tui_init();
+void tui_init(int three_wnd_mode, t_print_status_bar func_ptr);
 
 /**
  * End curses and destroy all windows

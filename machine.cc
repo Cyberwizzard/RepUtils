@@ -144,7 +144,7 @@ float get_z() {
 int home_xy() {
 	int res = serial_cmd("G28 X0 Y0\n", NULL);
 	if(res) return res;
-	res = serial_cmd("G01 X0 Y0\n");	// Home can be at the end as well; go to 0
+	res = serial_cmd("G01 X0 Y0\n", NULL);	// Home can be at the end as well; go to 0
 	if(res == 0) x = y = 0;
 	return res;
 }
@@ -152,7 +152,7 @@ int home_xy() {
 int home_xyz() {
 	int res = serial_cmd("G28 X0 Y0 Z0\n", NULL);
 	if(res) return res;
-	res = serial_cmd("G01 X0 Y0 Z0\n");	// Home can be at the end as well; go to 0
+	res = serial_cmd("G01 X0 Y0 Z0\n", NULL);	// Home can be at the end as well; go to 0
 	if(res == 0) x = y = z = 0;
 	return res;
 }
@@ -160,7 +160,7 @@ int home_xyz() {
 int home_x() {
 	int res = serial_cmd("G28 X0\n", NULL);
 	if(res) return res;
-	res = serial_cmd("G01 X0\n");	// Home can be at the end as well; go to 0
+	res = serial_cmd("G01 X0\n", NULL);	// Home can be at the end as well; go to 0
 	if(res == 0) x = 0;
 	return res;
 }
@@ -168,7 +168,7 @@ int home_x() {
 int home_y() {
 	int res = serial_cmd("G28 Y0\n", NULL);
 	if(res) return res;
-	res = serial_cmd("G01 Y0\n");	// Home can be at the end as well; go to 0
+	res = serial_cmd("G01 Y0\n", NULL);	// Home can be at the end as well; go to 0
 	if(res == 0) y = 0;
 	return res;
 }
@@ -176,7 +176,7 @@ int home_y() {
 int home_z() {
 	int res = serial_cmd("G28 Z0\n", NULL);
 	if(res) return res;
-	res = serial_cmd("G01 Z0\n");	// Home can be at the end as well; go to 0
+	res = serial_cmd("G01 Z0\n", NULL);	// Home can be at the end as well; go to 0
 	if(res == 0) z = 0;
 	return res;
 }

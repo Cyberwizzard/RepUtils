@@ -20,6 +20,10 @@ To compile run:
 
 Changelog
 =======
+0.3 - 2018-09-14
+- PID auto-tuning
+- Mesh builder for Marlin firmware
+
 0.2 - 2013-01-01
 - Rewrote UI code to be more modular
 - Support console resizing

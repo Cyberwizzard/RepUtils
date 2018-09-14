@@ -13,7 +13,8 @@
 
 #include "serial.h"
 #include "machine.h"
-#include "calibratez.h"
+#include "level_bed.h"
+#include "mesh_builder.h"
 
 #define _(x) ASSERT(x)
 
@@ -26,7 +27,9 @@ int main(void) {
 	if(serial_open() < 0) return -1;
 	printf("Opened serial port\n");
 
-	calibratez_heightloop();
+	//level_bed_heightloop();
+	mesh_builder();
+
 	//zaxis_break_in();
 	//pid_auto_tuning();
 

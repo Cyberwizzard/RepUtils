@@ -222,6 +222,16 @@ int disable_motor_hold() {
 	return serial_cmd("M84\n", NULL);
 }
 
+int enable_soft_endstops(bool on) {
+	if(on)
+		return serial_cmd("M211 S1\n",NULL);
+	return serial_cmd("M211 S0\n",NULL);
+}
+
+int mesh_disable() {
+	return serial_cmd("G29 D\n", NULL);
+}
+
 // ================================= Temperature stuff ====================
 
 int enable_fan(bool on) {

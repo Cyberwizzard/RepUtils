@@ -13,8 +13,8 @@
 WINDOW *serial_win          = NULL;		// Window for the serial communication to be shown in (shared window)
 WINDOW *serial_border       = NULL;		// Window to hold the border for the serial communication
 WINDOW *cmd_win             = NULL;		// Window to hold and show the commands for the program
-WINDOW *overview_win        = NULL;		// Window to hold the border for the overview window (3 window mode)
-WINDOW *overview_border_win = NULL;		// Window to hold and show the overview window (3 window mode)
+WINDOW *overview_border     = NULL;		// Window to hold the border for the overview window (3 window mode)
+WINDOW *overview_win        = NULL;		// Window to hold and show the overview window (3 window mode)
 
 // Defined in the level_bed routines - TODO: convert this into a hook to switch status bars on the fly
 //extern void print_status_bar(int row, int stepsize);
@@ -31,7 +31,7 @@ int three_wnd_mode = 0;
 void tui_init(int _three_wnd_mode, t_print_status_bar func_ptr) {
 	int col, row;
 	three_wnd_mode = _three_wnd_mode;
-	int o_rows = three_wnd_mode ? MESH_SIZE_Y + 4 : 0; // OVerview rows (incl border), only exists in 3 window mode
+	int o_rows = three_wnd_mode ? MESH_SIZE_Y + 5 : 0; // OVerview rows (incl border), only exists in 3 window mode
 
 	// Store the hook to the function which is drawing the status bar
 	func_print_status_bar = func_ptr;
@@ -64,7 +64,7 @@ void tui_init(int _three_wnd_mode, t_print_status_bar func_ptr) {
 	if(three_wnd_mode) {
 		// To retain the borders on a window, we first define a window 2 columns and rows larger
 		// than the window for the serial output and draw a box in it.
-		overview_border_win = newwin(o_rows, col, 0, 0); // height, width, y, x
+		overview_border = newwin(o_rows, col, 0, 0); // height, width, y, x
 		// Create a window for the serial output to be shown during operation
 		overview_win = newwin(o_rows-2, col-2, 1, 1); // height, width, y, x
 		// When inserting a new line at the end of the window, move the cursor one line up
@@ -78,8 +78,8 @@ void tui_init(int _three_wnd_mode, t_print_status_bar func_ptr) {
 	box(serial_border, 0, 0);
 	wrefresh(serial_border);
 	if(three_wnd_mode) {
-		box(overview_border_win, 0, 0);
-		wrefresh(overview_border_win);
+		box(overview_border, 0, 0);
+		wrefresh(overview_border);
 	}
 }
 
@@ -104,7 +104,7 @@ void tui_resize() {
 	wprintw(cmd_win, "Resize detected, new size: %i (rows) x %i (cols)\n", row, col);
 	wrefresh(cmd_win);
 
-	int o_rows = three_wnd_mode ? MESH_SIZE_Y + 4 : 0; // OVerview rows (incl border), only exists in 3 window mode
+	int o_rows = three_wnd_mode ? MESH_SIZE_Y + 5 : 0; // OVerview rows (incl border), only exists in 3 window mode
 	int serstart = (col / 2) - 1;
 	int cmdwidth = col / 2;
 	int serwidth = col - cmdwidth;
@@ -119,8 +119,8 @@ void tui_resize() {
 	WRESIZE(serial_win, serheight-2, serwidth-2);
 	WRESIZE(cmd_win, serheight, cmdwidth);
 	if (three_wnd_mode) {
-		WRESIZE(overview_border_win, o_rows, col);
-		WRESIZE(overview_win,        o_rows-2, col-2);
+		WRESIZE(overview_border, o_rows, col);
+		WRESIZE(overview_win,    o_rows-2, col-2);
 	}
 
 	// Move the serial windows
@@ -136,7 +136,7 @@ void tui_resize() {
 	assert(wnoutrefresh(serial_win)!=ERR);
 	assert(wnoutrefresh(cmd_win)!=ERR);
 	if (three_wnd_mode) {
-		assert(wnoutrefresh(overview_border_win)!=ERR);
+		assert(wnoutrefresh(overview_border)!=ERR);
 		assert(wnoutrefresh(overview_win)!=ERR);
 	}
 
@@ -145,9 +145,9 @@ void tui_resize() {
 	assert(box(serial_border, 0, 0)!=ERR);
 	assert(wnoutrefresh(serial_border)!=ERR);
 	if (three_wnd_mode) {
-		assert(wclear(overview_border_win)!=ERR);
-		assert(box(overview_border_win, 0, 0)!=ERR);
-		assert(wnoutrefresh(overview_border_win)!=ERR);
+		assert(wclear(overview_border)!=ERR);
+		assert(box(overview_border, 0, 0)!=ERR);
+		assert(wnoutrefresh(overview_border)!=ERR);
 	}
 
 

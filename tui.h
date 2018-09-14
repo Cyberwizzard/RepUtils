@@ -18,6 +18,8 @@
 extern WINDOW *serial_win;		// Window for the serial communication to be shown in (shared window)
 extern WINDOW *serial_border;	// Window to hold the border for the serial communication
 extern WINDOW *cmd_win;			// Window to hold and show the commands for the program
+extern WINDOW *overview_win;		// Window to hold the border for the overview window (3 window mode)
+extern WINDOW *overview_border_win;	// Window to hold and show the overview window (3 window mode)
 
 #define MIN_WIDTH 40
 #define MIN_HEIGHT 8

@@ -19,9 +19,8 @@
 ty_meshpoint mesh [MESH_SIZE_Y][MESH_SIZE_X];
 
 int mesh_builder_stepsize = 0;			// Step size for lowering or raising the head
-float mesh_builder_zoffset = -7.0f;		// The offset of the Z axis using G92, this allows us to get beyond the optoflag
 
-void mesh_builder_print_instructions(WINDOW *wnd, int base_corner = 0);
+void mesh_builder_print_mesh_status(WINDOW *wnd, int y, int x, int y_sel, int x_sel);
 
 
 void mesh_builder_destroy_win(WINDOW *local_win)
@@ -58,21 +57,35 @@ void mesh_builder_print_status_bar(int row, int stepsize) {
 
 int mesh_builder() {
 	int keepgoing = 1;			// Flag to terminate the input loop
-	int pos = 0;				// Current position of the toolhead, from [0..3] => [00,X0,XY,0Y]
-	float xyspeed = 4000.0f;	// Speed when moving from corner to corner
+	int x_pos = 0;				// Current position within the mesh
+	int y_pos = 0;				// Current position within the mesh
+	int x_sel = 0;				// Selection in the mesh to potentially activate to calibrate next
+	int y_sel = 0;				// Selection in the mesh to potentially activate to calibrate next
+	float xyspeed = 4000.0f;	// Speed when moving from point to point in the mesh
 	int ch;						// Integer to hold the key scancode during the input loop
 	float zraise = 0.0f;		// How far should the head be raised during moves from corner to corner?
+	float z_offset = 7.0f;		// The offset of the Z axis using G92, this allows us to get below the optoflag
 
 	// Input loop variables
-	mesh_builder_stepsize = 1;				// 0 = 1mm, 1 = 0.1mm, 2 = 0.01mm
+	mesh_builder_stepsize = 1;	// 0 = 1mm, 1 = 0.1mm, 2 = 0.01mm
 	float step = 0.1f;
-	int nopower = 0;			// Status flag: when the user pressed F5 to get the alignment info,
-								// the motors are shut down and all axis can move freely.
-								// We require the user to hit F6 afterwards to home all axis and restart
-								// the alignment test.
+
+	// Inititialize the mesh array so the X and Y coordinates of each mesh point are known
+	for (int y=0; y<MESH_SIZE_Y; y++) {
+		for (int x=0; x<MESH_SIZE_X; x++) {
+			mesh[y][x].valid = 0;
+
+			mesh[y][x].x = MESH_MIN_X + ((float)x * (MESH_MAX_X - MESH_MIN_X)) / (MESH_SIZE_X - 1);
+			mesh[y][x].y = MESH_MIN_Y + ((float)y * (MESH_MAX_Y - MESH_MIN_Y)) / (MESH_SIZE_Y - 1);
+			mesh[y][x].z = 0;
+		}
+	}
 
 	// Start curses and all windows
 	tui_init(1, &mesh_builder_print_status_bar);
+
+	// Print the overview of mesh points
+	mesh_builder_print_mesh_status(overview_win, y_pos, x_pos, y_sel, x_sel);
 
 	// Start by homing all axis on the machine
 	wprintw(cmd_win,"Homing all axis\n");
@@ -81,7 +94,7 @@ int mesh_builder() {
 	// Home all axis by raising Z first to avoid scraping the tape
 	{
 		ASSERT(override_zpos(0.0f));
-		ASSERT(set_z(1.0f,0,MAX_SPEED_Z));
+		ASSERT(set_z(4.0f,0,MAX_SPEED_Z));
 		ASSERT(home_xy());
 		ASSERT(home_z());
 	}
@@ -89,30 +102,41 @@ int mesh_builder() {
 	// How far can the head be lowered from the Z end stop?
 	{
 		int zoi = 0;
-		if(!utility_ask_int(cmd_win, "How far can the toolhead be lowered in mm?", &zoi, 10, 0, 20, 1)) goto stop;
-		mesh_builder_zoffset = (float)-zoi;
-		wprintw(cmd_win,"Using %.2f mm as the absolute lowest position\n", mesh_builder_zoffset);
+		// int utility_ask_int(WINDOW *wnd, string q, int *ans, int def, int min, int max, int step)
+		if(!utility_ask_int(cmd_win, "How far can the toolhead be lowered below the Z end-stop in mm?", &zoi, 10, 0, 20, 1)) goto stop;
+		z_offset = (float)zoi;
+		wprintw(cmd_win,"Using %.2f mm as the absolute lowest position\n", -z_offset);
 		wrefresh(cmd_win);
 	}
 
 	{
 		int zoi = 0;
-		if(!utility_ask_int(cmd_win, "During XY moves, how far should the toolhead be raised?", &zoi, 0, 0, 10, 1)) goto stop;
+		if(!utility_ask_int(cmd_win, "During XY moves, how far should the toolhead be raised compared to the Z end-stop?", &zoi, 0, 0, 10, 1)) goto stop;
 		zraise = (float)zoi;
 		wprintw(cmd_win,"Using %.2f mm as the repositioning height\n", zraise);
 		wrefresh(cmd_win);
 	}
 
-	// Apply the Z offset so we can lower the toolhead during leveling
-	ASSERT(override_zpos(-mesh_builder_zoffset));
+	// Disable the bed levelling logic so the machine reverts to linear motion
+	ASSERT(mesh_disable());
 
-	// Set all starting positions to the original zero
-	//zpos[0] = zpos[1] = zpos[2] = zpos[3] = -mesh_builder_zoffset;
+	// Disable the software end-stops so the machine can lower the head below the Z end-stop
+	ASSERT(enable_soft_endstops(false));
+	// Apply the Z offset so we can lower the toolhead during leveling (0 is now -z_offset below the Z end-stop)
+	ASSERT(override_zpos(z_offset));
+
+	// Move Z up to whatever the movement height is
+	ASSERT(set_z(zraise+z_offset));
+	// Move to point (0,0) in the mesh
+	ASSERT(set_position(mesh[0][0].x,mesh[0][0].y,get_z(),0,xyspeed));
 
 	// Input loop
 	// Print the status bar
 	mesh_builder_print_status_bar(LINES-1, mesh_builder_stepsize);
+	wrefresh(overview_win);
 	while(keepgoing) {
+		int update = 0; // Flag to trigger the mesh Z height to be updated and the mesh overview refreshed
+
 		if(mesh_builder_stepsize < 0 || mesh_builder_stepsize > 2) {
 			wprintw(cmd_win,"Invalid step size detected: %i\n", mesh_builder_stepsize);
 			goto stop;
@@ -125,226 +149,149 @@ int mesh_builder() {
 		ch = 256 + getch();
 
 		// Handle the key press
-		if(nopower == 0) {
-			switch(ch) {
-			case 'q': // Quit the control loop
-				keepgoing = 0;
 
+		switch(ch) {
+		case 'q': // Quit the control loop
+			keepgoing = 0;
+
+			// Raise the head
+			set_z(zraise+z_offset);
+			// Move to origin
+			set_position(0,0,get_z(),0,xyspeed);
+
+			break;
+		case KEY_LEFT:
+			if(mesh_builder_stepsize > 0) mesh_builder_stepsize--;
+			switch(mesh_builder_stepsize) {
+				case 0: step = 1.0f; break;
+				case 1: step = 0.1f; break;
+				case 2: step = 0.01f; break;
+			}
+			// Print the status bar
+			mesh_builder_print_status_bar(LINES-1, mesh_builder_stepsize);
+			break;
+		case KEY_RIGHT:
+			if(mesh_builder_stepsize < 2) mesh_builder_stepsize++;
+			switch(mesh_builder_stepsize) {
+				case 0: step = 1.0f; break;
+				case 1: step = 0.1f; break;
+				case 2: step = 0.01f; break;
+			}
+			// Print the status bar
+			mesh_builder_print_status_bar(LINES-1, mesh_builder_stepsize);
+			break;
+		case KEY_DOWN: {
+			float z = get_z();
+			z -= step;
+			if(z < 0) {
+				wprintw(cmd_win,"Warning: could not lower toolhead further, switch to a smaller step size\n");
+			} else {
+				// Lower the head
+				wprintw(cmd_win,"Setting Z to %.2f\n", z-z_offset);
+				ASSERT(set_z(z,0,MAX_SPEED_Z));
+			}}
+			// Toolhead moved, mark this point now as valid
+			if(!mesh[y_pos][x_pos].valid) mesh[y_pos][x_pos].valid = 1;
+			update = 1; // Update the mesh state
+			break;
+		case KEY_UP: {
+			float z = get_z();
+			z += step;
+			if(z > 50.0f) {
+				wprintw(cmd_win,"Warning: could not raise toolhead further, switch to a smaller step size\n");
+			} else {
 				// Raise the head
-				set_z(-mesh_builder_zoffset);
-				// Move to origin
-				set_position(0,0,get_z(),0,xyspeed);
-
-				break;
-			case KEY_LEFT:
-				if(mesh_builder_stepsize > 0) mesh_builder_stepsize--;
-				switch(mesh_builder_stepsize) {
-					case 0: step = 1.0f; break;
-					case 1: step = 0.1f; break;
-					case 2: step = 0.01f; break;
-				}
-				// Print the status bar
-				mesh_builder_print_status_bar(LINES-1, mesh_builder_stepsize);
-				break;
-			case KEY_RIGHT:
-				if(mesh_builder_stepsize < 2) mesh_builder_stepsize++;
-				switch(mesh_builder_stepsize) {
-					case 0: step = 1.0f; break;
-					case 1: step = 0.1f; break;
-					case 2: step = 0.01f; break;
-				}
-				// Print the status bar
-				mesh_builder_print_status_bar(LINES-1, mesh_builder_stepsize);
-				break;
-			case KEY_DOWN: {
-				float z = get_z();
-				z -= step;
-				if(z < 0) {
-					wprintw(cmd_win,"Warning: could not lower toolhead further, switch to a smaller step size\n");
-				} else {
-					// Lower the head
-					wprintw(cmd_win,"Setting Z to %.2f\n", z+mesh_builder_zoffset);
-					ASSERT(set_z(z,0,MAX_SPEED_Z));
-				}}
-				break;
-			case KEY_UP: {
-				float z = get_z();
-				z += step;
-				if(z > 50.0f) {
-					wprintw(cmd_win,"Warning: could not raise toolhead further, switch to a smaller step size\n");
-				} else {
-					// Raise the head
-					wprintw(cmd_win,"Setting Z to %.2f\n", z+mesh_builder_zoffset);
-					ASSERT(set_z(z,0,MAX_SPEED_Z));
-				}}
-				break;
-			case '1':
-			case KEY_F1:
-				// Only move if we are not already at that corner
-				if(pos == 0) break;
-				wprintw(cmd_win, "Moving to corner 1 @ (%.1f,%.1f)\n", MIN_X, MIN_Y);
-
-				// Store the current position of the Z axis
-				//zpos[pos] = get_z();
-				// Set the current position to this one
-				pos = 0;
-				// Move the toolhead up to the correct height to move the toolhead
-				set_z(-mesh_builder_zoffset + zraise);
-				// Move to corner 1
-				set_position(MIN_X,MIN_Y,-mesh_builder_zoffset + zraise,0,xyspeed);
-				// Lower toolhead to previous setting
-				//set_z(zpos[pos]);
-				//wprintw(cmd_win, "Ready @ Z=%.1f\n", zpos[pos]+mesh_builder_zoffset);
-
-				break;
-			case '2':
-			case KEY_F2:
-				// Only move if we are not already at that corner
-				if(pos == 1) break;
-				wprintw(cmd_win, "Moving to corner 2 @ (%.1f,%.1f)\n", MAX_X, MIN_Y);
-
-				// Store the current position of the Z axis
-				//zpos[pos] = get_z();
-				// Set the current position to this one
-				pos = 1;
-				// Move the toolhead up to the correct height to move the toolhead
-				set_z(-mesh_builder_zoffset + zraise);
-				// Move to corner 1
-				set_position(MAX_X,MIN_Y,-mesh_builder_zoffset + zraise,0,xyspeed);
-				// Lower toolhead to previous setting
-				//set_z(zpos[pos]);
-				//wprintw(cmd_win, "Ready @ Z=%.1f\n", zpos[pos]+mesh_builder_zoffset);
-
-				break;
-			case '3':
-			case KEY_F3:
-				// Only move if we are not already at that corner
-				if(pos == 2) break;
-				wprintw(cmd_win, "Moving to corner 3 @ (%.1f,%.1f)\n", MAX_X, MAX_Y);
-
-				// Store the current position of the Z axis
-				//zpos[pos] = get_z();
-				// Set the current position to this one
-				pos = 2;
-				// Move the toolhead up to the correct height to move the toolhead
-				set_z(-mesh_builder_zoffset + zraise);
-				// Move to corner 1
-				set_position(MAX_X,MAX_Y,-mesh_builder_zoffset + zraise,0,xyspeed);
-				// Lower toolhead to previous setting
-				//set_z(zpos[pos]);
-				//wprintw(cmd_win, "Ready @ Z=%.1f\n", zpos[pos]+mesh_builder_zoffset);
-
-				break;
-			case '4':
-			case KEY_F4:
-				// Only move if we are not already at that corner
-				if(pos == 3) break;
-				wprintw(cmd_win, "Moving to corner 4 @ (%.1f,%.1f)\n", MIN_X, MAX_Y);
-
-				// Store the current position of the Z axis
-				//zpos[pos] = get_z();
-				// Set the current position to this one
-				pos = 3;
-				// Move the toolhead up to the correct height to move the toolhead
-				set_z(-mesh_builder_zoffset + zraise);
-				// Move to corner 1
-				set_position(MIN_X,MAX_Y,-mesh_builder_zoffset + zraise,0,xyspeed);
-				// Lower toolhead to previous setting
-				//set_z(zpos[pos]);
-				//wprintw(cmd_win, "Ready @ Z=%.1f\n", zpos[pos]+mesh_builder_zoffset);
-
-				break;
-			case KEY_F5:
-				// Store current position
-				//zpos[pos] = get_z();
-
-				wprintw(cmd_win, "Positions of each corner:\n");
-				//wprintw(cmd_win, "[1] (%.1f,%.1f) => %.2f\n", MIN_X, MIN_Y, mesh_builder_zoffset+zpos[0]);
-				//wprintw(cmd_win, "[2] (%.1f,%.1f) => %.2f\n", MAX_X, MIN_Y, mesh_builder_zoffset+zpos[1]);
-				//wprintw(cmd_win, "[3] (%.1f,%.1f) => %.2f\n", MAX_X, MAX_Y, mesh_builder_zoffset+zpos[2]);
-				//wprintw(cmd_win, "[4] (%.1f,%.1f) => %.2f\n", MIN_X, MAX_Y, mesh_builder_zoffset+zpos[3]);
-
-				{
-					int bc = 0;
-					if(!utility_ask_int(cmd_win, "Which corner should be stationary?\n1 to 4, 5 for average or 6 for three corners? (Esc to cancel)", &bc, 1, 1, 6, 1)) {
-						// Abort the calculation
-						break;
-					}
-
-					mesh_builder_print_instructions(cmd_win, bc-1);
-
-				}
-
-				// Move the head and present the bed
-				set_z(-mesh_builder_zoffset);
-				set_position(MIN_X,MAX_Y,-mesh_builder_zoffset,0,xyspeed);
-				// Barrier: wait for the move to complete before turning off the motors
-				set_dwell(0);
-
-				// Disable the motor hold
-				disable_motor_hold();
-				wprintw(cmd_win, "Motor hold disabled, press F6 to power on and home all axis\n");
-
-				// Set the flag to force the user to press F6 or quit
-				nopower = 1;
-				break;
-			case 410:
-				// Resize event
-				tui_resize();
-				break;
-			default: // Unknown keypress
-				wprintw(cmd_win,"Invalid key: %i\n", ch);
+				wprintw(cmd_win,"Setting Z to %.2f\n", z-z_offset);
+				ASSERT(set_z(z,0,MAX_SPEED_Z));
+			}}
+			// Toolhead moved, mark this point now as valid
+			if(!mesh[y_pos][x_pos].valid) mesh[y_pos][x_pos].valid = 1;
+			update = 1; // Update the mesh state
+			break;
+		case 'a':
+			// Move 'left' on the mesh selection
+			if(x_sel > 0) {
+				x_sel--;
+				update = 1; // Update the mesh state
 			}
-		} else {
-			// Motors are powered off: only allow 'q'uit or F6 to power on and home al axis
-			switch(ch) {
-				case 'q': // Quit the control loop
-					keepgoing = 0;
-
-					// Raise the head
-					set_z(-mesh_builder_zoffset);
-					// Move to origin
-					set_position(0,0,get_z(),0,xyspeed);
-
-					break;
-				case KEY_LEFT:
-				case KEY_RIGHT:
-				case KEY_DOWN:
-				case KEY_UP:
-				case '1':
-				case KEY_F1:
-				case '2':
-				case KEY_F2:
-				case '3':
-				case KEY_F3:
-				case '4':
-				case KEY_F4:
-				case KEY_F5:
-					wprintw(cmd_win, "Motor hold disabled, press F6 to restart and home all axis or F7 to home and retain each corner\n");
-					break;
-				case KEY_F6:
-					// Erase the Z positioning to go back to the Z home point
-					//for(int i=0;i<4;i++) zpos[i] = -mesh_builder_zoffset;
-					/* no break */
-				case KEY_F7:
-					// Disable the flag to return to normal alignment mode
-					nopower = 0;
-					// Tell the user what we are doing
-					wprintw(cmd_win, "Homing all axis\n");
-					home_xyz();
-					// Override the Z offset again
-					override_zpos(-mesh_builder_zoffset);
-					// We are back at position 1
-					pos = 0;
-					// Ready for another round
-					wprintw(cmd_win, "Ready\n");
-				default: // Unknown keypress
-					wprintw(cmd_win,"Invalid key: %i\n", ch);
+			break;
+		case 'd':
+			// Move 'right' on the mesh selection
+			if(x_sel < MESH_SIZE_X-1) {
+				x_sel++;
+				update = 1; // Update the mesh state
 			}
+			break;
+		case 'w':
+			// Move 'up' on the mesh selection
+			if(y_sel < MESH_SIZE_Y-1) {
+				y_sel++;
+				update = 1; // Update the mesh state
+			}
+			break;
+		case 's':
+			// Move 'down' on the mesh selection
+			if(y_sel > 0) {
+				y_sel--;
+				update = 1; // Update the mesh state
+			}
+			break;
+		case 10:
+			// Enter key - switch selection
+			if(x_sel != x_pos || y_sel != y_pos) {
+				// Selection changed - get the current Z and store it (relatively to the Z end-stop, which was shifted up by z_offset)
+				mesh[y_pos][x_pos].z = get_z() - z_offset;
+
+				// Update position to selection
+				x_pos = x_sel;
+				y_pos = y_sel;
+				wprintw(cmd_win, "Moving to mesh point (%i,%i) @ (%.1f,%.1f)\n", x_pos, y_pos, mesh[y_pos][x_pos].x, mesh[y_pos][x_pos].y);
+				// Raise Z and move to new position
+				set_z(zraise+z_offset);
+				set_position(mesh[y_pos][x_pos].x,mesh[y_pos][x_pos].y,get_z(),0,xyspeed);
+				set_z(mesh[y_pos][x_pos].z+z_offset);
+
+				// Update the overview
+				mesh_builder_print_mesh_status(overview_win, y_pos, x_pos, y_sel, x_sel);
+			}
+			break;
+		case '1':
+		case KEY_F1:
+			// Only move if we are not already at that corner
+
+			wprintw(cmd_win, "Moving to corner 1 @ (%.1f,%.1f)\n", MIN_X, MIN_Y);
+
+			// Store the current position of the Z axis
+			//zpos[pos] = get_z();
+			// Set the current position to this one
+			// Move the toolhead up to the correct height to move the toolhead
+			set_z(z_offset + zraise);
+			// Move to corner 1
+			set_position(MIN_X,MIN_Y,-z_offset + zraise,0,xyspeed);
+			// Lower toolhead to previous setting
+			//set_z(zpos[pos]);
+			//wprintw(cmd_win, "Ready @ Z=%.1f\n", zpos[pos]+z_offset);
+
+			break;
+		case 410:
+			// Resize event
+			tui_resize();
+			break;
+		default: // Unknown keypress
+			wprintw(cmd_win,"Invalid key: %i\n", ch);
+		}
+
+		// Update the mesh if requested
+		if (update) {
+			// Get the current Z and store it in the mesh (so the view will update)
+			mesh[y_pos][x_pos].z = get_z() - z_offset;
+			// Re-print the overview
+			mesh_builder_print_mesh_status(overview_win, y_pos, x_pos, y_sel, x_sel);
 		}
 
 		// When we are all done, update the screen
 		wrefresh(cmd_win);
+		wrefresh(overview_win);
 	}
 
 stop:
@@ -363,50 +310,38 @@ stop:
 }
 
 /**
- * Print instructions to level the bed, based on a specific corner.
- * We make one corner stationary and take the 3 other corners to screw up or down.
+ * Print the mesh status overview
  * @param wnd Window to print the question and feedback in
- * @param base_corner Corner to hold stationary: 1 to 4, clock-wise starting at left-back.
+ * @param y active Y point in the mesh
+ * @param x active X point in the mesh
+ * @param y selected Y point in the mesh
+ * @param x selected X point in the mesh
  */
-void mesh_builder_print_instructions(WINDOW *wnd, int base_corner) {
-	/*assert(base_corner >= 0 && base_corner <= 3);
-	const char *left = "left";
-	const char *right = "right";
+void mesh_builder_print_mesh_status(WINDOW *wnd, int y, int x, int y_sel, int x_sel) {
+	wprintw(wnd, "\nMesh size: %i (x) * %i (y)     - Mesh boundaries: (%0.2f, %0.2f) - (%0.2f, %0.2f)\n",
+			MESH_SIZE_X, MESH_SIZE_Y, MESH_MIN_X, MESH_MIN_Y, MESH_MAX_X, MESH_MAX_Y);
 
-	// Use pointers to the corner positions to quickly switch between base modes
-	float zpos0,zpos1,zpos2,zpos3;
-	int z_number[4];
-
-	// Generate a list of corner numbers, omit the base corner
-	z_number[0] = base_corner;
-	for(int i=1;i<4;i++) z_number[i] = base_corner < i ? i : i - 1;
-
-	// Use the corner list to remap the corners, keeping the base at 0 and the rest at 1 to 3
-	zpos0 = zpos[base_corner];
-	zpos1 = zpos[z_number[1]];
-	zpos2 = zpos[z_number[2]];
-	zpos3 = zpos[z_number[3]];
-
-	wprintw(wnd, "Using corner %i as base:\n", z_number[0]+1);
-	{
-		const char *dir = (zpos1 < zpos0) ? left : right;
-		float angle = ((zpos1 - zpos0) / M4_pitch);
-		if(angle < 0) angle = -angle;
-		wprintw(wnd, "Corner %i: delta %.2f mm - turn screw %.2f times %s\n", z_number[1]+1, zpos1-zpos0, angle, dir);
+	for (int yy = MESH_SIZE_Y; yy >= 0; yy--) {
+		for (int xx = 0; xx < MESH_SIZE_X; xx++) {
+			if(mesh[yy][xx].valid) {
+				if(x == xx && y == yy)
+					wprintw(wnd, "[%6.2f] ", mesh[yy][xx].z);
+				else if(x_sel == xx && y_sel == yy)
+					wprintw(wnd, "<%6.2f> ", mesh[yy][xx].z);
+				else
+					wprintw(wnd, " %6.2f  ", mesh[yy][xx].z);
+			} else {
+				if(x == xx && y == yy)
+					wprintw(wnd, "  [ * ]  ");
+				else if(x_sel == xx && y_sel == yy)
+					wprintw(wnd, "  < * >  ");
+				else
+					wprintw(wnd, "    *    ");
+			}
+		}
+		wprintw(wnd, "\n");
 	}
-	{
-		const char *dir = (zpos2 < zpos0) ? left : right;
-		float angle = ((zpos2 - zpos0) / M4_pitch);
-		if(angle < 0) angle = -angle;
-		wprintw(wnd, "Corner %i: delta %.2f mm - turn screw %.2f times %s\n", z_number[2]+1, zpos2-zpos0, angle, dir);
-	}
-	{
-		const char *dir = (zpos3 < zpos0) ? left : right;
-		float angle = ((zpos3 - zpos0) / M4_pitch);
-		if(angle < 0) angle = -angle;
-		wprintw(wnd, "Corner %i: delta %.2f mm - turn screw %.2f times %s\n", z_number[3]+1, zpos3-zpos0, angle, dir);
-	}*/
-
-	wprintw(wnd, "Dummy\n");
+	wprintw(wnd, "Active point: [%i, %i] ", x, y);
+	if (x != x_sel || y != y_sel)
+		wprintw(wnd, "   -    Selected point: <%i, %i> (press enter to activate and move the head) ", x_sel, y_sel);
 }
-

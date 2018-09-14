@@ -80,6 +80,10 @@ int override_zpos(float val);
 
 int disable_motor_hold();
 
+int enable_soft_endstops(bool on);
+
+int mesh_disable();
+
 int enable_fan(bool on);
 
 int get_temperature(const unsigned char heaterid, double *temp);

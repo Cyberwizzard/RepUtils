@@ -7,6 +7,7 @@
 
 #include <stdio.h>
 #include <curses.h>
+#include <stdlib.h>
 #include "main.h"
 #include "serial.h"
 #include "machine.h"
@@ -27,7 +28,7 @@ extern WINDOW *serial_win;
  * @param relative Marks the given coordinates as a relative move instead of an absolute one
  * @param speed for the move, always absolute
  */
-int set_position(float xval, float yval, float zval, int relative, float speedval) {
+int set_position(float xval, float yval, float zval, int relative, float speedval, bool changes_only) {
 	int res = 0;
 	// Boundary checks
 	if(relative) { 	SAFETY_LIMIT_TEST(X, (x+xval), res); }
@@ -62,7 +63,7 @@ int set_position(float xval, float yval, float zval, int relative, float speedva
 	}
 
 	// Test if something needs to be done
-	if((cx+cy+cz+cs)==0) {
+	if((cx+cy+cz+cs)==0 && changes_only) {
 		message("Delta move\n");
 		return 0;
 	}
@@ -70,10 +71,10 @@ int set_position(float xval, float yval, float zval, int relative, float speedva
 	char buf[100];
 	int ptr = 0;
 	ptr += snprintf(buf, 100-ptr, "G01 ");
-	if(cx) ptr += snprintf(&buf[ptr], 100-ptr,"X%.2f ", x);
-	if(cy) ptr += snprintf(&buf[ptr], 100-ptr,"Y%.2f ", y);
-	if(cz) ptr += snprintf(&buf[ptr], 100-ptr,"Z%.2f ", z);
-	if(cs) ptr += snprintf(&buf[ptr], 100-ptr,"F%.2f ", speed);
+	if(cx || !changes_only) ptr += snprintf(&buf[ptr], 100-ptr,"X%.2f ", x);
+	if(cy || !changes_only) ptr += snprintf(&buf[ptr], 100-ptr,"Y%.2f ", y);
+	if(cz || !changes_only) ptr += snprintf(&buf[ptr], 100-ptr,"Z%.2f ", z);
+	if(cs || !changes_only) ptr += snprintf(&buf[ptr], 100-ptr,"F%.2f ", speed);
 	ptr += snprintf(&buf[ptr], 100-ptr,"\n");
 	return serial_cmd(buf, NULL);
 }
@@ -142,32 +143,46 @@ float get_z() {
 
 int home_xy() {
 	int res = serial_cmd("G28 X0 Y0\n", NULL);
+	if(res) return res;
+	res = serial_cmd("G01 X0 Y0\n");	// Home can be at the end as well; go to 0
 	if(res == 0) x = y = 0;
 	return res;
 }
 
 int home_xyz() {
 	int res = serial_cmd("G28 X0 Y0 Z0\n", NULL);
+	if(res) return res;
+	res = serial_cmd("G01 X0 Y0 Z0\n");	// Home can be at the end as well; go to 0
 	if(res == 0) x = y = z = 0;
 	return res;
 }
 
 int home_x() {
 	int res = serial_cmd("G28 X0\n", NULL);
+	if(res) return res;
+	res = serial_cmd("G01 X0\n");	// Home can be at the end as well; go to 0
 	if(res == 0) x = 0;
 	return res;
 }
 
 int home_y() {
 	int res = serial_cmd("G28 Y0\n", NULL);
+	if(res) return res;
+	res = serial_cmd("G01 Y0\n");	// Home can be at the end as well; go to 0
 	if(res == 0) y = 0;
 	return res;
 }
 
 int home_z() {
 	int res = serial_cmd("G28 Z0\n", NULL);
+	if(res) return res;
+	res = serial_cmd("G01 Z0\n");	// Home can be at the end as well; go to 0
 	if(res == 0) z = 0;
 	return res;
+}
+
+int get_pos() {
+	return serial_cmd("M114\n", NULL);
 }
 
 /**
@@ -205,4 +220,72 @@ int override_zpos(float val) {
 
 int disable_motor_hold() {
 	return serial_cmd("M84\n", NULL);
+}
+
+// ================================= Temperature stuff ====================
+
+int enable_fan(bool on) {
+	if(on)
+		return serial_cmd("M106 S255\n",NULL);
+	return serial_cmd("M106 S0\n",NULL);
+}
+
+int get_temperature(const unsigned char heaterid, double *temp) {
+	char *reply,buf[100];
+	snprintf(buf,100,"M105 P%hhu\n", heaterid);
+	if(serial_cmd(buf,&reply) != 0) return -1;
+
+	// Find the location of the ':' which will be followed by the temperature
+	int pos_s = 0, pos_e = 0;
+	do {
+		if (reply[pos_e] == ':') pos_s = pos_e;
+		pos_e++;
+	} while(reply[pos_e] != 0x0);
+	// Check for weird or empty reply
+	if(pos_e <= pos_s) return -1;
+
+	// Convert the value after the double colon to a double
+	*temp = atof(&reply[pos_s+1]);
+
+	return 0;
+}
+
+int set_temperature(const unsigned char heaterid, const double temp) {
+	char *reply,buf[100];
+	snprintf(buf,100,"M104 P%hhu S%.0f\n", heaterid, temp);
+	return serial_cmd(buf,&reply);
+}
+
+/**
+ * Modify the proportional scaling value of the PID logic in the printer.
+ * WARNING: The commands for this might differ from Teacup on other firmwares!
+ */
+int set_pid_p(const double p) {
+	char buf[100];
+	snprintf(buf,100,"M130 P0 S%.2f\n", p);
+	return serial_cmd(buf, NULL);
+}
+
+/**
+ * Modify the integral scaling value of the PID logic in the printer.
+ * WARNING: The commands for this might differ from Teacup on other firmwares!
+ */
+int set_pid_i(const int32_t i) {
+	char buf[100];
+	snprintf(buf,100,"M131 P0 S%i\n", i);
+	return serial_cmd(buf, NULL);
+}
+
+/**
+ * Modify the differential scaling value of the PID logic in the printer.
+ * WARNING: The commands for this might differ from Teacup on other firmwares!
+ */
+int set_pid_d(const int32_t d) {
+	char buf[100];
+	snprintf(buf,100,"M132 P0 S%i\n", d);
+	return serial_cmd(buf, NULL);
+}
+
+int print_pid() {
+	return serial_cmd("M136\n", NULL);
 }

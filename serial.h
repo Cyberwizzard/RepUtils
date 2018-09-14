@@ -28,5 +28,7 @@ int serial_waitforok(bool flush, int timeout);
  */
 void set_reset_dtr();
 
+void serial_verbose(bool b);
+
 
 #endif /* SERIAL_H_ */

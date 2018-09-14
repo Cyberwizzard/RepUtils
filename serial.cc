@@ -19,10 +19,12 @@
 #include <curses.h>
 extern WINDOW *serial_win;
 
+bool serial_ena_output = true;		// Utility switch to silence serial I/O
+
 #define error_message(...) { if(serial_win==NULL) fprintf(stderr, __VA_ARGS__); \
 							  else { wprintw(serial_win, __VA_ARGS__); wrefresh(serial_win); }}
-#define message(...) { if(serial_win==NULL) printf(__VA_ARGS__); \
-						else { wprintw(serial_win, __VA_ARGS__); wrefresh(serial_win); }}
+#define message(...) { if(serial_ena_output) { if(serial_win==NULL) printf(__VA_ARGS__); \
+						else { wprintw(serial_win, __VA_ARGS__); wrefresh(serial_win); }}}
 
 int serial_fd = 0;
 
@@ -219,21 +221,24 @@ int serial_cmd(const char *cmd, char **reply) {
 				if(lineend >= 0) {
 					// Print the discarded data
 					message("* %.*s\n", lineend, buf);
-					//write(1 /* std out */, buf, lineend);
-					//printf("\n");
 
 					// Now move all bytes after the lineend in the buffer
-					for(unsigned int i=lineend+1;i<bp;i++) {
+					for(unsigned int i=lineend+1;i<bp;i++)
 						buf[i-lineend-1] = buf[i];
-					}
 					// Adjust pointer and ending
-					bp -= lineend - 1;
+					bp = bp - lineend - 1;
 
 					// Erase the end of the buffer
-					for(unsigned int i=bp;i<buflen;i++) buf[i] = 0;
+					//for(unsigned int i=bp;i<buflen;i++) buf[i] = 0;
+					// Adjust pointer and ending
+					unsigned int old_bp = bp;
+					bp = bp - lineend - 1;
+
+					// Erase the end of the buffer
+					for(unsigned int i=bp;i<=old_bp;i++) buf[i] = 0x0;
 				}
 			} else {
-				// Print the reply, no need for a '\n' as the buffer has that
+				// Print the reply
 				message("< %s\n", buf);
 
 				// Buffer starts with 'ok' and has a line ending, return the buffer.
@@ -335,7 +340,7 @@ int serial_waitforok(bool flush, int timeout) {
 				// Test if a line ending was found
 				if(lineend >= 0) {
 					// Print the discarded data
-					message("* %.*s\n", lineend, buf);
+					message("* %.*s", lineend, buf);
 
 					// Now move all bytes after the lineend in the buffer to
 					// the beginning of the byte buffer.
@@ -344,14 +349,15 @@ int serial_waitforok(bool flush, int timeout) {
 					}
 					// Adjust pointer and ending
 					unsigned int old_bp = bp;
-					bp -= lineend - 1;
+					bp = bp - lineend - 1;
 
 					// Erase the end of the buffer
-					for(unsigned int i=bp;i<=old_bp;i++) buf[i] = 0x0;
+					for(unsigned int i=bp;i<=old_bp;i++)
+						buf[i] = 0x0;
 				}
 			} else {
-				// Print the reply, no need for a '\n' as the buffer has that
-				message("< %s\n", buf);
+				// Print the reply
+				message("< '%s'", buf);
 				return 0;
 			}
 		}
@@ -363,4 +369,8 @@ int serial_waitforok(bool flush, int timeout) {
 
 int serial_cmd(const char *cmd) {
 	return serial_cmd(cmd, NULL);
+}
+
+void serial_verbose(bool b) {
+	serial_ena_output = b;
 }

@@ -49,7 +49,7 @@ void destroy_win(WINDOW *local_win)
 }
 
 void print_status_bar(int row, int stepsize) {
-	const char *banner = "[F1-F4] Move to corner [Up/Down] Raise/lower head [Left/Right] Change step size: %s";
+	const char *banner = "[F1-F4] Move to corner [F5] Do calibration [Up/Down] Raise/lower head [Left/Right] Change step size: %s";
 	const char *step0 = "[1mm] 0.1mm 0.01mm";
 	const char *step1 = "1mm [0.1mm] 0.01mm";
 	const char *step2 = "1mm 0.1mm [0.01mm]";
@@ -63,6 +63,7 @@ int calibratez_heightloop() {
 	int pos = 0;				// Current position of the toolhead, from [0..3] => [00,X0,XY,0Y]
 	float xyspeed = 4000.0f;	// Speed when moving from corner to corner
 	int ch;						// Integer to hold the key scancode during the input loop
+	float zraise = 0.0f;		// How far should the head be raised during moves from corner to corner?
 
 	// Input loop variables
 	stepsize = 1;				// 0 = 1mm, 1 = 0.1mm, 2 = 0.01mm
@@ -78,7 +79,14 @@ int calibratez_heightloop() {
 	// Start by homing all axis on the machine
 	wprintw(cmd_win,"Homing all axis\n");
 	wrefresh(cmd_win);
-	ASSERT(home_xyz());
+	//ASSERT(home_xyz());
+	// Home all axis by raising Z first to avoid scraping the tape
+	{
+		ASSERT(override_zpos(0.0f));
+		ASSERT(set_z(1.0f,0,MAX_SPEED_Z));
+		ASSERT(home_xy());
+		ASSERT(home_z());
+	}
 
 	// How far can the head be lowered from the Z end stop?
 	{
@@ -86,6 +94,14 @@ int calibratez_heightloop() {
 		if(!utility_ask_int(cmd_win, "How far can the toolhead be lowered in mm?", &zoi, 10, 0, 20, 1)) goto stop;
 		zoffset = (float)-zoi;
 		wprintw(cmd_win,"Using %.2f mm as the absolute lowest position\n", zoffset);
+		wrefresh(cmd_win);
+	}
+
+	{
+		int zoi = 0;
+		if(!utility_ask_int(cmd_win, "During XY moves, how far should the toolhead be raised?", &zoi, 0, 0, 10, 1)) goto stop;
+		zraise = (float)zoi;
+		wprintw(cmd_win,"Using %.2f mm as the repositioning height\n", zraise);
 		wrefresh(cmd_win);
 	}
 
@@ -150,7 +166,7 @@ int calibratez_heightloop() {
 				} else {
 					// Lower the head
 					wprintw(cmd_win,"Setting Z to %.2f\n", z+zoffset);
-					ASSERT(set_z(z,0,100.0f));
+					ASSERT(set_z(z,0,MAX_SPEED_Z));
 				}}
 				break;
 			case KEY_UP: {
@@ -161,7 +177,7 @@ int calibratez_heightloop() {
 				} else {
 					// Raise the head
 					wprintw(cmd_win,"Setting Z to %.2f\n", z+zoffset);
-					ASSERT(set_z(z,0,100.0f));
+					ASSERT(set_z(z,0,MAX_SPEED_Z));
 				}}
 				break;
 			case '1':
@@ -174,10 +190,10 @@ int calibratez_heightloop() {
 				zpos[pos] = get_z();
 				// Set the current position to this one
 				pos = 0;
-				// Move the toolhead up to 0
-				set_z(-zoffset);
+				// Move the toolhead up to the correct height to move the toolhead
+				set_z(-zoffset + zraise);
 				// Move to corner 1
-				set_position(MIN_X,MIN_Y,-zoffset,0,xyspeed);
+				set_position(MIN_X,MIN_Y,-zoffset + zraise,0,xyspeed);
 				// Lower toolhead to previous setting
 				set_z(zpos[pos]);
 				wprintw(cmd_win, "Ready @ Z=%.1f\n", zpos[pos]+zoffset);
@@ -193,10 +209,10 @@ int calibratez_heightloop() {
 				zpos[pos] = get_z();
 				// Set the current position to this one
 				pos = 1;
-				// Move the toolhead up to 0
-				set_z(-zoffset);
+				// Move the toolhead up to the correct height to move the toolhead
+				set_z(-zoffset + zraise);
 				// Move to corner 1
-				set_position(MAX_X,MIN_Y,-zoffset,0,xyspeed);
+				set_position(MAX_X,MIN_Y,-zoffset + zraise,0,xyspeed);
 				// Lower toolhead to previous setting
 				set_z(zpos[pos]);
 				wprintw(cmd_win, "Ready @ Z=%.1f\n", zpos[pos]+zoffset);
@@ -212,10 +228,10 @@ int calibratez_heightloop() {
 				zpos[pos] = get_z();
 				// Set the current position to this one
 				pos = 2;
-				// Move the toolhead up to 0
-				set_z(-zoffset);
+				// Move the toolhead up to the correct height to move the toolhead
+				set_z(-zoffset + zraise);
 				// Move to corner 1
-				set_position(MAX_X,MAX_Y,-zoffset,0,xyspeed);
+				set_position(MAX_X,MAX_Y,-zoffset + zraise,0,xyspeed);
 				// Lower toolhead to previous setting
 				set_z(zpos[pos]);
 				wprintw(cmd_win, "Ready @ Z=%.1f\n", zpos[pos]+zoffset);
@@ -231,10 +247,10 @@ int calibratez_heightloop() {
 				zpos[pos] = get_z();
 				// Set the current position to this one
 				pos = 3;
-				// Move the toolhead up to 0
-				set_z(-zoffset);
+				// Move the toolhead up to the correct height to move the toolhead
+				set_z(-zoffset + zraise);
 				// Move to corner 1
-				set_position(MIN_X,MAX_Y,-zoffset,0,xyspeed);
+				set_position(MIN_X,MAX_Y,-zoffset + zraise,0,xyspeed);
 				// Lower toolhead to previous setting
 				set_z(zpos[pos]);
 				wprintw(cmd_win, "Ready @ Z=%.1f\n", zpos[pos]+zoffset);
@@ -245,14 +261,14 @@ int calibratez_heightloop() {
 				zpos[pos] = get_z();
 
 				wprintw(cmd_win, "Positions of each corner:\n");
-				wprintw(cmd_win, "(%.1f,%.1f) => %.2f\n", MIN_X, MIN_Y, zoffset+zpos[0]);
-				wprintw(cmd_win, "(%.1f,%.1f) => %.2f\n", MAX_X, MIN_Y, zoffset+zpos[1]);
-				wprintw(cmd_win, "(%.1f,%.1f) => %.2f\n", MAX_X, MAX_Y, zoffset+zpos[2]);
-				wprintw(cmd_win, "(%.1f,%.1f) => %.2f\n", MIN_X, MAX_Y, zoffset+zpos[3]);
+				wprintw(cmd_win, "[1] (%.1f,%.1f) => %.2f\n", MIN_X, MIN_Y, zoffset+zpos[0]);
+				wprintw(cmd_win, "[2] (%.1f,%.1f) => %.2f\n", MAX_X, MIN_Y, zoffset+zpos[1]);
+				wprintw(cmd_win, "[3] (%.1f,%.1f) => %.2f\n", MAX_X, MAX_Y, zoffset+zpos[2]);
+				wprintw(cmd_win, "[4] (%.1f,%.1f) => %.2f\n", MIN_X, MAX_Y, zoffset+zpos[3]);
 
 				{
 					int bc = 0;
-					if(!utility_ask_int(cmd_win, "Which corner should be stationary?\n1 to 4, 5 for average or 6 for three corners?", &bc, 1, 1, 6, 1)) {
+					if(!utility_ask_int(cmd_win, "Which corner should be stationary?\n1 to 4, 5 for average or 6 for three corners? (Esc to cancel)", &bc, 1, 1, 6, 1)) {
 						// Abort the calculation
 						break;
 					}
@@ -270,7 +286,7 @@ int calibratez_heightloop() {
 
 				// Move the head and present the bed
 				set_z(-zoffset);
-				set_position(0,0,-zoffset,0,xyspeed);
+				set_position(MIN_X,MAX_Y,-zoffset,0,xyspeed);
 				// Barrier: wait for the move to complete before turning off the motors
 				set_dwell(0);
 

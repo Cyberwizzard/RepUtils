@@ -23,7 +23,7 @@
 /**
  * Position the head of the machine in 3 dimensional space and with a given speed.
  * Note that only changed parameters are sent to the printer to reduce traffic over
- * the serial port.
+ * the serial port when changes_only is true.
  * @param xval X coordinate
  * @param yval Y coordinate
  * @param zval Z coordinate
@@ -31,7 +31,7 @@
  * @param speed for the move, always absolute
  * @return 0 for OK or a negative error code otherwise
  */
-int set_position(float xval, float yval, float zval, int relative, float speed);
+int set_position(float xval, float yval, float zval, int relative, float speed, bool changes_only = true);
 
 // Wrapper functions around set_position for ease of use
 int home_x();
@@ -55,6 +55,8 @@ float get_z();
 int home_xy();
 int home_xyz();
 
+int get_pos();
+
 int set_speed(float val);
 
 /**
@@ -77,5 +79,16 @@ int set_dwell(int timeout);
 int override_zpos(float val);
 
 int disable_motor_hold();
+
+int enable_fan(bool on);
+
+int get_temperature(const unsigned char heaterid, double *temp);
+int set_temperature(const unsigned char heaterid, const double temp);
+
+int set_pid_p(const double p);
+int set_pid_i(const int i);
+int set_pid_d(const int d);
+int print_pid();
+
 
 #endif /* MACHINE_H_ */

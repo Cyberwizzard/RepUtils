@@ -15,14 +15,14 @@
 							// to drive the printer.
 
 // Safety features: define some limits to prevent sending insane commands to the printer
-#define MAX_X 183.0f
+#define MAX_X 120.0f
 #define MIN_X 0.0f
-#define MAX_Y 180.0f
+#define MAX_Y 160.0f
 #define MIN_Y 0.0f
 #define MAX_Z 140.0f
 #define MIN_Z 0.0f
-#define MAX_SPEED_X 4000.0f
-#define MAX_SPEED_Y 4000.0f
-#define MAX_SPEED_Z 200.0f
+#define MAX_SPEED_X 5000.0f
+#define MAX_SPEED_Y 5000.0f
+#define MAX_SPEED_Z 600.0f
 
 #endif /* MAIN_H_ */

@@ -9,6 +9,9 @@
 #define MACHINE_H_
 
 #include "main.h"		// Also contains the machine boundaries
+#include "mesh_builder.h"
+
+#include <ncurses.h>
 
 #define TOKENPASTE(x, y) x ## y
 #define TOKENPASTE2(x, y) TOKENPASTE(x, y)
@@ -58,6 +61,21 @@ int home_xyz();
 int get_pos();
 
 int set_speed(float val);
+
+/**
+ * Load the UBL mesh points from a specific EEPROM save slot (or the currently loaded mesh)
+ * @param slot Set to -1 to load the current mesh points and not load a mesh from EEPROM
+ * @param mesh Pointer to the mesh memory to load with the mesh points from the printer
+ */
+int mesh_download(int slot = -1, ty_meshpoint mesh[MESH_SIZE_Y][MESH_SIZE_X] = NULL, WINDOW* wnd = NULL);
+
+/**
+ * Upload the UBL mesh points into a specific EEPROM save slot (or the currently loaded mesh)
+ * @param slot Set to -1 to only load the mesh into the printer RAM (and not EEPROM)
+ * @param mesh Pointer to the mesh memory to upload with the mesh points for the printer
+ * @param wnd Window handle from ncurses to print debug info into (when NULL no debug info is generated)
+ */
+int mesh_upload(int slot, ty_meshpoint mesh[MESH_SIZE_Y][MESH_SIZE_X], WINDOW* wnd);
 
 /**
  * Tell the machine to dwell for a number of microseconds. This is an unbuffered command

@@ -31,5 +31,14 @@ using namespace std;
  */
 bool utility_ask_int(WINDOW *wnd, string q, int *ans, int def, int min = 0, int max = 999, int step = 1);
 
+/**
+ * Ask for an yes or no answer.
+ * @param wnd The curses window to print the question in.
+ * @param q String holding the question to ask.
+ * @param ans A pointer to put the answer in, True for yes, False for no.
+ * @param def The default value for the question, 0 for yes, any other value for no
+ * @return False if the user pressed escape to abort the question.
+ */
+bool utility_ask_bool(WINDOW *wnd, string q, bool *ans, int def);
 
 #endif /* UTILITY_H_ */

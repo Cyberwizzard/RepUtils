@@ -31,7 +31,7 @@ int three_wnd_mode = 0;
 void tui_init(int _three_wnd_mode, t_print_status_bar func_ptr) {
 	int col, row;
 	three_wnd_mode = _three_wnd_mode;
-	int o_rows = three_wnd_mode ? MESH_SIZE_Y + 5 : 0; // OVerview rows (incl border), only exists in 3 window mode
+	int o_rows = three_wnd_mode ? MESH_SIZE_Y + 4 : 0; // OVerview rows (incl border), only exists in 3 window mode
 
 	// Store the hook to the function which is drawing the status bar
 	func_print_status_bar = func_ptr;
@@ -104,7 +104,7 @@ void tui_resize() {
 	wprintw(cmd_win, "Resize detected, new size: %i (rows) x %i (cols)\n", row, col);
 	wrefresh(cmd_win);
 
-	int o_rows = three_wnd_mode ? MESH_SIZE_Y + 5 : 0; // OVerview rows (incl border), only exists in 3 window mode
+	int o_rows = three_wnd_mode ? MESH_SIZE_Y + 4 : 0; // OVerview rows (incl border), only exists in 3 window mode
 	int serstart = (col / 2) - 1;
 	int cmdwidth = col / 2;
 	int serwidth = col - cmdwidth;

@@ -5,6 +5,7 @@
  *      Author: cyberwizzard
  */
 
+#include <sys/select.h>
 #include <errno.h>
 #include <termios.h>
 #include <unistd.h>
@@ -80,9 +81,16 @@ int set_interface_attribs(int fd, int speed, int parity) {
 /**
  * Set DTR (Data Transfer Ready) to low and high again - this simulates a modem
  * hangup and should power cycle the printer on the other end.
+ * Note: when the demo mode is enabled, this call does nothing
  */
 void set_reset_dtr() {
 	int status = 0;
+
+	if(DEMO_MODE) {
+		// Demo mode - pretend we do a reset
+		return;
+	}
+
 	// Fetch the status from the file descriptor
     ioctl(serial_fd, TIOCMGET, &status);
     // Mask the DTR bit so DTR will get low
@@ -100,6 +108,7 @@ void set_reset_dtr() {
 /**
  * When enabling blocking, a read() on the serial port (terminal) will block until
  * data is available.
+ * Note: when the demo mode is enabled, this call does nothing
  */
 void set_blocking(int fd, int should_block) {
 	if(DEMO_MODE) {
@@ -123,6 +132,10 @@ void set_blocking(int fd, int should_block) {
 		error_message("error %d setting term attributes\n", errno);
 }
 
+/**
+ * Open the serial port to the printer
+ * Note: when the demo mode is enabled, this call does nothing
+ */
 int serial_open() {
 	if(DEMO_MODE) {
 		// Demo mode - pretend we opened a port
@@ -154,11 +167,38 @@ void serial_close() {
 	}
 }
 
+/**
+ * Send a command over the serial port to the printer.
+ * @param cmd Character buffer to send out
+ * @param reply Pointer to a character buffer to fill the reply in (for commands that need to parse the response)
+ */
 int serial_cmd(const char *cmd, char **reply) {
 	if(DEMO_MODE) {
 		// Demo mode - pretend we send the command
 		message("> %s", cmd);
-		message("DEMO MODE: command ok\n");
+
+		// Special handling of mesh loading command; fake response to test parser
+		if(strcmp(cmd, "G29 T1\n") == 0) {
+			// Mesh load request - return canned reply
+			message("DEMO MODE: command ok - returning fake mesh data\n");
+
+			if(reply != NULL) {
+				*reply = strdup("\n"
+							"Bed Topography Report for CSV:\n"
+							"\n"
+							"0.086,-0.091,-0.281,-0.369,-0.514,-0.610,-0.619,-0.719\n"
+							"-0.018,-0.176,-0.307,-0.423,-0.528,-0.569,-0.633,-0.662\n"
+							"-0.081,-0.261,-0.340,-0.432,-0.558,-0.612,-0.670,-0.607\n"
+							"-0.107,-0.244,-0.383,-0.457,-0.568,-0.594,-0.705,-0.683\n"
+							"-0.128,-0.289,-0.417,-0.522,-0.613,-0.702,-0.738,-0.821\n"
+							"-0.120,-0.274,-0.453,-0.550,-0.649,-0.743,-0.804,-0.892\n"
+							"-0.217,-0.383,-0.596,-0.661,-0.806,-0.877,-0.935,-0.992\n"
+							"-0.318,-0.461,-0.621,-0.710,-0.750,-0.837,-0.836,-0.961\n"
+							"ok\n");
+			}
+		} else {
+			message("DEMO MODE: command ok\n");
+		}
 		return 0;
 	}
 

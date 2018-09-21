@@ -5,12 +5,15 @@
  *      Author: cyberwizzard
  */
 
+#include <sys/select.h>
 #include <stdio.h>
 #include <curses.h>
 #include <stdlib.h>
+
 #include "main.h"
 #include "serial.h"
 #include "machine.h"
+#include "mesh_builder.h"
 
 float x = 0.0f,y = 0.0f,z = 0.0f,speed = 0.0f;
 extern WINDOW *serial_win;
@@ -181,6 +184,10 @@ int home_z() {
 	return res;
 }
 
+/**
+ * Request the position of the toolhead from the printer
+ * TODO: parse this and return the values?
+ */
 int get_pos() {
 	return serial_cmd("M114\n", NULL);
 }
@@ -218,18 +225,198 @@ int override_zpos(float val) {
 	return serial_cmd(buf, NULL);
 }
 
+/**
+ * Disable the motor hold; this switches off the motors (which might cause the machine
+ * to lose alignment!)
+ * Firmware: Marlin, Teacup
+ */
 int disable_motor_hold() {
 	return serial_cmd("M84\n", NULL);
 }
 
+/**
+ * Enable or disable the software end-stops, to allow the toolhead to go outside the safe
+ * bounds on the machine.
+ * Firmware: Marlin
+ */
 int enable_soft_endstops(bool on) {
 	if(on)
 		return serial_cmd("M211 S1\n",NULL);
 	return serial_cmd("M211 S0\n",NULL);
 }
 
+/**
+ * Disable the UBL mesh compensation; required to calibrate the mesh points (because the
+ * firmware will try to compensate as well - which would be bad).
+ */
 int mesh_disable() {
 	return serial_cmd("G29 D\n", NULL);
+}
+
+/**
+ * Load the UBL mesh points from a specific EEPROM save slot (or the currently loaded mesh)
+ * @param slot Set to -1 to load the current mesh points and not load a mesh from EEPROM
+ * @param mesh Pointer to the mesh memory to load with the mesh points from the printer
+ * @param wnd Window handle from ncurses to print debug info into (when NULL no debug info is generated)
+ */
+int mesh_download(int slot, ty_meshpoint mesh[MESH_SIZE_Y][MESH_SIZE_X], WINDOW* wnd) {
+	int err = 0, row = 0, col = 0, lpos = 0, only_valid = 1, has_comma = 0;
+	char cmd_buf[100];
+	char *res_buf = NULL;
+
+	// See if a slot should be loaded first
+	if(slot >= 0) {
+		snprintf(cmd_buf,100,"G29 L%i\n", slot);
+		if((err = serial_cmd(cmd_buf, NULL))) return err;
+		if(wnd != NULL) { wprintw(wnd,"Slot load OK\n"); wrefresh(wnd); }
+	}
+
+	// Reset and invalidate all points in the mesh
+	for(int y=0; y<MESH_SIZE_Y; y++) {
+		for(int x=0; x<MESH_SIZE_X; x++) {
+			mesh[y][x].z     = 0.0f;
+			mesh[y][x].valid = 0;
+		}
+	}
+	if(wnd != NULL) { wprintw(wnd,"Mesh reset OK\n"); wrefresh(wnd); }
+
+	// Fetch all mesh points in CSV format
+	if((err = serial_cmd("G29 T1\n", &res_buf))) return err;
+	if(wnd != NULL) { wprintw(wnd,"G29T OK\n"); wrefresh(wnd); }
+
+	// Scan the buffer until a line with at least one comma is found and only
+	// numbers and dots (other characters indicate status lines)
+	for (int p = 0; p < 4096; p++) {
+		if(res_buf[p] == '\n') {
+			// Check if the previous line was valid (only comma delimited numbers)
+			if(only_valid && has_comma) break;
+
+			// Previous line was not a CSV list of floats, continue scanning...
+
+			// New line character - clear flags
+			only_valid = 1;
+			has_comma = 0;
+			// Update the line start in the 'left pos' flag
+			lpos = p+1;
+		} else if(res_buf[p] == '\r') {
+			// Carriage return - swallow this character silently
+		} else if(res_buf[p] == ',') {
+			has_comma = 1;
+		} else if((res_buf[p] >= '0' && res_buf[p] <= '9') || res_buf[p] == '.' || res_buf[p] == '-') {
+			// Numeric characters - silently swallow as these are allowed
+		} else {
+			// Unknown characters; mark line as invalid
+			only_valid = 0;
+		}
+	}
+	if(!only_valid || !has_comma) {
+		// No valid lines found in the first 4kB of output...
+		free(res_buf);
+		return 1;
+	}
+	if(wnd != NULL) { wprintw(wnd,"CSV data start @ %i\n", lpos); wrefresh(wnd); }
+
+	// lpos now points to the first line of CSV data describing the mesh
+
+	// loop over the buffer to find either a comma or a newline
+	for(int pos=lpos+1; pos<4096; pos++) {
+		if(res_buf[pos] == 0) {
+			// End of string - should never occur when parsing numbers...
+			free(res_buf);
+			return 1;
+		} else if(res_buf[pos] == '\r') {
+			// Carriage return is not needed, ignore it by replacing it with a space
+			res_buf[pos] = ' ';
+		} else if(res_buf[pos] == ',') {
+			// Parse number string between lpos and pos into float
+			// Note: change comma into null to 'end' the numeric string at the comma
+			res_buf[pos] = 0;
+			mesh[row][col].z = atof(&res_buf[lpos]);
+			mesh[row][col].valid = 1;
+			if(wnd != NULL) { wprintw(wnd,"Parsed CSV: (%i, %i) => %.03f\n", col, row, mesh[row][col].z); wrefresh(wnd); }
+			// Revert to be able to print the whole buffer if we want to
+			res_buf[pos] = ',';
+			// Update left position
+			lpos = pos+1;
+			// Move column
+			col++;
+			// Sanity
+			if(col >= MESH_SIZE_X) {
+				// More mesh point columns in printer result than we allow!
+				free(res_buf);
+				return 3;
+			}
+		} else if(res_buf[pos] == '\n') {
+			// Parse number string between lpos and pos into float
+			// Note: change comma into null to 'end' the numeric string at the comma
+			res_buf[pos] = 0;
+			mesh[row][col].z = atof(&res_buf[lpos]);
+			mesh[row][col].valid = 1;
+			if(wnd != NULL) { wprintw(wnd,"Parsed CSV: (%i, %i) => %.03f\n", col, row, mesh[row][col].z); wrefresh(wnd); }
+			// Revert to be able to print the whole buffer if we want to
+			res_buf[pos] = '\n';
+			// Update left position
+			lpos = pos+1;
+			// Reset column
+			col = 0;
+			// Move row
+			row++;
+
+			// End of mesh test
+			if(row == MESH_SIZE_Y) {
+				break;
+			}
+
+			// Sanity
+			if(row >= MESH_SIZE_Y) {
+				// More mesh point rows in printer result than we allow!
+				free(res_buf);
+				return 4;
+			}
+		}
+	}
+
+	if(wnd != NULL) { wprintw(wnd,"Done parsing mesh\n"); wrefresh(wnd); }
+
+	// Parsing done, free buffer
+	free(res_buf);
+
+	// Flag success
+	return 0;
+}
+
+/**
+ * Upload the UBL mesh points into a specific EEPROM save slot (or the currently loaded mesh)
+ * @param slot Set to -1 to only load the mesh into the printer RAM (and not EEPROM)
+ * @param mesh Pointer to the mesh memory to upload with the mesh points for the printer
+ * @param wnd Window handle from ncurses to print debug info into (when NULL no debug info is generated)
+ */
+int mesh_upload(int slot, ty_meshpoint mesh[MESH_SIZE_Y][MESH_SIZE_X], WINDOW* wnd) {
+	int err = 0;
+	char cmd_buf[100];
+
+	// Reset and invalidate all points in the mesh
+	for(int y=0; y<MESH_SIZE_Y; y++) {
+		for(int x=0; x<MESH_SIZE_X; x++) {
+			if(mesh[y][x].valid)
+				snprintf(cmd_buf, 100, "M421 I%i J%i Z%.03f\n", x, y, mesh[y][x].z);
+			else
+				snprintf(cmd_buf, 100, "M421 I%i J%i N1\n", x, y);
+			// Execute upload for this point in the mesh
+			if((err = serial_cmd(cmd_buf, NULL))) return err;
+		}
+	}
+	if(wnd != NULL) { wprintw(wnd,"Mesh upload OK\n"); wrefresh(wnd); }
+
+	// See if a slot should be saved
+	if(slot >= 0) {
+		snprintf(cmd_buf,100,"G29 S%i\n", slot);
+		if((err = serial_cmd(cmd_buf, NULL))) return err;
+		if(wnd != NULL) { wprintw(wnd,"Slot save OK\n"); wrefresh(wnd); }
+	}
+
+	// Flag success
+	return 0;
 }
 
 // ================================= Temperature stuff ====================

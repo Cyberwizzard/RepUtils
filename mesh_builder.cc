@@ -46,7 +46,8 @@ void mesh_builder_destroy_win(WINDOW *local_win)
 }
 
 void mesh_builder_print_status_bar(int row, int stepsize) {
-	const char *banner = "[AWSD] Move to mesh point [F2] Fill Row [F3] Fill Column [F4] Fill All [Up/Down] Raise/lower head [Left/Right] Change step size: %s";
+	//const char *banner = "[AWSD] Move mesh point [F2] Fill Row [F3] Fill Column [F4] Fill All [Up/Down] Raise/lower head [Left/Right] Change step size: %s";
+	const char *banner = "[F5] Download mesh [F6] Upload mesh [F10] Quit [AWSD] Move mesh point [Up/Down] Raise/lower head [Left/Right] Change step size: %s";
 	const char *step0 = "[1mm] 0.1mm 0.01mm";
 	const char *step1 = "1mm [0.1mm] 0.01mm";
 	const char *step2 = "1mm 0.1mm [0.01mm]";
@@ -77,7 +78,7 @@ int mesh_builder() {
 
 			mesh[y][x].x = MESH_MIN_X + ((float)x * (MESH_MAX_X - MESH_MIN_X)) / (MESH_SIZE_X - 1);
 			mesh[y][x].y = MESH_MIN_Y + ((float)y * (MESH_MAX_Y - MESH_MIN_Y)) / (MESH_SIZE_Y - 1);
-			mesh[y][x].z = 0;
+			mesh[y][x].z = 0.0f;
 		}
 	}
 
@@ -152,6 +153,10 @@ int mesh_builder() {
 
 		switch(ch) {
 		case 'q': // Quit the control loop
+			wprintw(cmd_win,"Hint: to quit, press F10 (instead of Q)\n");
+
+			break;
+		case KEY_F10:
 			keepgoing = 0;
 
 			// Raise the head
@@ -255,23 +260,62 @@ int mesh_builder() {
 				mesh_builder_print_mesh_status(overview_win, y_pos, x_pos, y_sel, x_sel);
 			}
 			break;
-		case '1':
-		case KEY_F1:
-			// Only move if we are not already at that corner
+		case KEY_F5:
+			{
+				int zoi = 0;
+				int errcode = 0;
+				// Load the mesh from the printer
+				wprintw(cmd_win, "Preparing to download mesh from printer...\n");
+				// int utility_ask_int(WINDOW *wnd, string q, int *ans, int def, int min, int max, int step)
+				if(!utility_ask_int(cmd_win, "Which mesh should be loaded from printer EEPROM? Use -1 to use the currently active mesh instead.", &zoi, -1, -1, 20, 1)) goto stop;
 
-			wprintw(cmd_win, "Moving to corner 1 @ (%.1f,%.1f)\n", MIN_X, MIN_Y);
+				// Download mesh from printer
+				if((errcode = mesh_download(zoi, mesh, cmd_win))) {
+					if(errcode == 1) {
+						wprintw(cmd_win, "ERROR: No valid CSV line found in first 4kB of mesh response!\n");
+					} else if(errcode == 3) {
+						wprintw(cmd_win, "ERROR: Incorrect number of columns (X points) found! Expected: %i\n", MESH_SIZE_X);
+					} if(errcode == 4) {
+						wprintw(cmd_win, "ERROR: Incorrect number of rows (Y points) found! Expected: %i\n", MESH_SIZE_Y);
+					} else {
+						wprintw(cmd_win, "ERROR: Unknown error during download: %i\n", errcode);
+					}
+				} else {
+					wprintw(cmd_win, "Downloaded mesh successfully\n");
+				}
 
-			// Store the current position of the Z axis
-			//zpos[pos] = get_z();
-			// Set the current position to this one
-			// Move the toolhead up to the correct height to move the toolhead
-			set_z(z_offset + zraise);
-			// Move to corner 1
-			set_position(MIN_X,MIN_Y,-z_offset + zraise,0,xyspeed);
-			// Lower toolhead to previous setting
-			//set_z(zpos[pos]);
-			//wprintw(cmd_win, "Ready @ Z=%.1f\n", zpos[pos]+z_offset);
+				// Redraw the mesh overview
+				update = 1;
 
+				// Ask to align the toolhead to get started
+				bool ans = false;
+				if(!utility_ask_bool(cmd_win, "Mesh loaded; move toolhead to loaded Z position?", &ans, false)) goto stop;
+				if(ans) {
+					// Move to current Z height in mesh
+					wprintw(cmd_win,"Setting Z to %.2f\n", mesh[y_pos][x_pos].z);
+					ASSERT(set_z(mesh[y_pos][x_pos].z+z_offset));
+				} else {
+					wprintw(cmd_win,"Not moving current Z height; downloaded mesh point updated\n");
+				}
+
+			}
+			break;
+		case KEY_F6:
+			{
+				int zoi = 0;
+				int errcode = 0;
+				// Load the mesh from the printer
+				wprintw(cmd_win, "Preparing to upload mesh to printer...\n");
+				// int utility_ask_int(WINDOW *wnd, string q, int *ans, int def, int min, int max, int step)
+				if(!utility_ask_int(cmd_win, "Which mesh slot should the mesh be saved into printer EEPROM? Use -1 to only upload.", &zoi, -1, -1, 20, 1)) goto stop;
+
+				// Upload mesh from printer
+				if((errcode = mesh_upload(zoi, mesh, cmd_win))) {
+					wprintw(cmd_win, "ERROR: Unknown error during download: %i\n", errcode);
+				} else {
+					wprintw(cmd_win, "Uploaded mesh successfully\n");
+				}
+			}
 			break;
 		case 410:
 			// Resize event
@@ -321,7 +365,7 @@ void mesh_builder_print_mesh_status(WINDOW *wnd, int y, int x, int y_sel, int x_
 	wprintw(wnd, "\nMesh size: %i (x) * %i (y)     - Mesh boundaries: (%0.2f, %0.2f) - (%0.2f, %0.2f)\n",
 			MESH_SIZE_X, MESH_SIZE_Y, MESH_MIN_X, MESH_MIN_Y, MESH_MAX_X, MESH_MAX_Y);
 
-	for (int yy = MESH_SIZE_Y; yy >= 0; yy--) {
+	for (int yy = MESH_SIZE_Y - 1; yy >= 0; yy--) {
 		for (int xx = 0; xx < MESH_SIZE_X; xx++) {
 			if(mesh[yy][xx].valid) {
 				if(x == xx && y == yy)

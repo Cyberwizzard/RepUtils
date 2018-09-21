@@ -77,5 +77,58 @@ bool utility_ask_int(WINDOW *wnd, string q, int *ans, int def, int min, int max,
 	return false;
 }
 
+/**
+ * Ask for an yes or no answer.
+ * @param wnd The curses window to print the question in.
+ * @param q String holding the question to ask.
+ * @param ans A pointer to put the answer in, True for yes, False for no.
+ * @param def The default value for the question, 0 for yes, any other value for no
+ * @return False if the user pressed escape to abort the question.
+ */
+bool utility_ask_bool(WINDOW *wnd, string q, bool *ans, int def) {
+	assert(wnd!=NULL);
+	assert(ans!=NULL);
+
+	do {
+		wprintw(wnd, q.c_str());
+		wprintw(wnd, " [%s]: ", (def ? "Y/n" : "y/N"));
+		wrefresh(wnd);
+
+		do {
+			// Read a keyboard press
+			int ch = getch();
+			// Correct the scan code for special keys like the arrow keys (consisting of 2 keystrokes)
+			if ( ch == 0 || ch == 224 )
+			ch = 256 + getch();
+
+			if(ch=='y'||ch=='Y') {
+				// Yes
+				wprintw(wnd, "%c\n", ch);
+				wrefresh(wnd);
+				*ans = true;
+				return true;
+			} else if(ch=='n'||ch=='N') {
+				// No
+				wprintw(wnd, "%c\n", ch);
+				wrefresh(wnd);
+				*ans = false;
+				return true;
+			} else if(ch == 13 || ch == 10) {
+				// Enter, return default
+				wprintw(wnd, "%c\n", def ? 'Y' : 'N');
+				wrefresh(wnd);
+				*ans = def;
+				return true;
+			} else if(ch == 27) {
+				// Escape, abort
+				wprintw(wnd, "abort\n");
+				wrefresh(wnd);
+				return false;
+			}
+		} while(1);
+	} while(1);
+	return false;
+}
+
 
 

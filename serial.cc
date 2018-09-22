@@ -31,6 +31,7 @@ int serial_fd = 0;
 
 // http://stackoverflow.com/questions/6947413/how-to-open-read-and-write-from-serial-port-in-c
 // http://www.easysw.com/~mike/serial/serial.html#3_1_1
+// https://support.dce.felk.cvut.cz/pos/cv5/doc/serial.html
 int set_interface_attribs(int fd, int speed, int parity) {
 	if(DEMO_MODE) {
 		// Demo mode - pretend we set attributes
@@ -51,25 +52,30 @@ int set_interface_attribs(int fd, int speed, int parity) {
 	cfsetospeed(&tty, speed);
 	cfsetispeed(&tty, speed);
 
-	tty.c_cflag = (tty.c_cflag & ~CSIZE) | CS8;     // 8-bit chars
+	// Control options
+	tty.c_cflag = (tty.c_cflag & ~CSIZE) | CS8;     // blank out character size bits and set bits for 8-bit chars
 	// disable IGNBRK for mismatched speed tests; otherwise receive break
 	// as \000 chars
 	tty.c_iflag &= ~IGNBRK;         // ignore break signal
 	tty.c_lflag = 0;                // no signaling chars, no echo,
 									// no canonical processing
+	// Output options
 	tty.c_oflag = 0;                // no remapping, no delays
-	tty.c_cc[VMIN] = 0;            // read doesn't block
-	//tty.c_cc[VTIME] = 5;            // 0.5 seconds read timeout
-	tty.c_cc[VTIME] = 0;            // no timeout
 
-	tty.c_iflag &= ~(IXON | IXOFF | IXANY); // shut off xon/xoff ctrl
+	// Control Characters
+	tty.c_cc[VMIN] = 0;             // read doesn't block; even 0 bytes is fine to return
+	tty.c_cc[VTIME] = 5;            // 0.5 seconds read timeout
+	//tty.c_cc[VTIME] = 0;            // no timeout
 
-	tty.c_cflag |= (CLOCAL | CREAD); // ignore modem controls,
-									 // enable reading
-	tty.c_cflag &= ~(PARENB | PARODD);      // shut off parity
-	tty.c_cflag |= parity;
-	tty.c_cflag &= ~CSTOPB;
-	tty.c_cflag &= ~CRTSCTS;
+	// Input options
+	tty.c_iflag &= ~(IXON | IXOFF | IXANY); // shut off xon/xoff ctrl: no software flow control
+
+	tty.c_cflag |= (CLOCAL | CREAD);	// ignore modem controls,
+										// enable reading
+	tty.c_cflag &= ~(PARENB | PARODD);	// shut off parity (clear parity bits)
+	tty.c_cflag |= parity;				// set parity if desired
+	tty.c_cflag &= ~CSTOPB;				// 1 stop bit (CSTOPB high indicates 2 stop bits)
+	tty.c_cflag &= ~CRTSCTS;			// use hardware flow control (if available)
 
 	if (tcsetattr(fd, TCSANOW, &tty) != 0) {
 		error_message("error %d from tcsetattr\n", errno);
@@ -156,10 +162,9 @@ int serial_open() {
 	// toggle the DTR line to trigger a reset at the printer (most hardware supports this)
 	set_reset_dtr();
 
-	//message("Serial port opened - waiting for printer to start\n");
-	//return serial_waitforok(false, 30);
-	message("Serial port opened - returning control\n");
-	return 0:
+	message("Serial port opened - waiting for printer to start\n");
+	serial_waitforok(false, 30); // Edit - ignore return code for printers not using 'OK' during restart
+	return 0;
 }
 
 void serial_close() {
@@ -331,7 +336,7 @@ int serial_waitforok(bool flush, int timeout) {
 		return 0;
 	}
 
-	const unsigned int buflen = 1000;
+	const unsigned int buflen = 2000; // Buffer needs to be big enough to buffer the printer start blurp
 	char buf [buflen+1]; 		// Ugly hack (+1) to make sure the buffer is always null-terminated
 	unsigned int bp = 0;		// Buffer pointer, tracks the number of bytes used in the buffer
 

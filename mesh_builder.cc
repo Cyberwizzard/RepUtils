@@ -20,7 +20,7 @@ ty_meshpoint mesh [MESH_SIZE_Y][MESH_SIZE_X];
 
 int mesh_builder_stepsize = 0;			// Step size for lowering or raising the head
 
-void mesh_builder_print_mesh_status(WINDOW *wnd, int y, int x, int y_sel, int x_sel);
+void mesh_builder_print_mesh_status(WINDOW *wnd, int y, int x, int y_sel, int x_sel, double t_hotend, double t_bed);
 
 
 void mesh_builder_destroy_win(WINDOW *local_win)
@@ -67,6 +67,9 @@ int mesh_builder() {
 	float zraise = 0.0f;		// How far should the head be raised during moves from corner to corner?
 	float z_offset = 7.0f;		// The offset of the Z axis using G92, this allows us to get below the optoflag
 
+	double t_hotend = 0;		// Temperature of the hotend, periodically polled and printed in mesh overview
+	double t_bed = 0;			// Temperature of the bed, periodically polled and printed in mesh overview
+
 	// Input loop variables
 	mesh_builder_stepsize = 1;	// 0 = 1mm, 1 = 0.1mm, 2 = 0.01mm
 	float step = 0.1f;
@@ -86,7 +89,7 @@ int mesh_builder() {
 	tui_init(1, &mesh_builder_print_status_bar);
 
 	// Print the overview of mesh points
-	mesh_builder_print_mesh_status(overview_win, y_pos, x_pos, y_sel, x_sel);
+	mesh_builder_print_mesh_status(overview_win, y_pos, x_pos, y_sel, x_sel, t_hotend, t_bed);
 
 	// Start by homing all axis on the machine
 	wprintw(cmd_win,"Homing all axis\n");
@@ -109,7 +112,7 @@ int mesh_builder() {
 		wprintw(cmd_win,"Using %.2f mm as the absolute lowest position\n", -z_offset);
 		wrefresh(cmd_win);
 	}
-
+	// Raise height for XY moves (assuming the bed is below the Z opto position for all XY, this is likely 0 for everyone)
 	{
 		int zoi = 0;
 		if(!utility_ask_int(cmd_win, "During XY moves, how far should the toolhead be raised compared to the Z end-stop?", &zoi, 0, 0, 10, 1)) goto stop;
@@ -117,8 +120,22 @@ int mesh_builder() {
 		wprintw(cmd_win,"Using %.2f mm as the repositioning height\n", zraise);
 		wrefresh(cmd_win);
 	}
+	// Pre-heat support for hotend and bed; levelling should be done at (almost) operating temperatures to
+	// ensure the mechanics are at the correct dimensions when building the mesh.
+	{
+		int temp = 0;
+		if(!utility_ask_int(cmd_win, "Pre-heat hot-end to which temperature?", &temp, PREHEAT_TEMP_HOTEND, 0, MAX_TEMP_HOTEND, 1)) goto stop;
+		wprintw(cmd_win,"Setting hot-end to %i°C\n", temp);
+		wrefresh(cmd_win);
+		set_hotend_temperature((double)temp);
 
-	// Disable the bed levelling logic so the machine reverts to linear motion
+		if(!utility_ask_int(cmd_win, "Pre-heat bed to which temperature?", &temp, PREHEAT_TEMP_BED, 0, MAX_TEMP_BED, 1)) goto stop;
+		wprintw(cmd_win,"Setting bed to %i°C\n", temp);
+		wrefresh(cmd_win);
+		set_bed_temperature((double)temp);
+	}
+
+	// Disable the bed leveling logic so the machine reverts to linear motion
 	ASSERT(mesh_disable());
 
 	// Disable the software end-stops so the machine can lower the head below the Z end-stop
@@ -135,6 +152,10 @@ int mesh_builder() {
 	// Print the status bar
 	mesh_builder_print_status_bar(LINES-1, mesh_builder_stepsize);
 	wrefresh(overview_win);
+
+	// Set the timeout for getch() so the temperature gets updated every now and then
+	timeout(2000);
+
 	while(keepgoing) {
 		int update = 0; // Flag to trigger the mesh Z height to be updated and the mesh overview refreshed
 
@@ -152,6 +173,11 @@ int mesh_builder() {
 		// Handle the key press
 
 		switch(ch) {
+		case ERR:
+			// Timeout on input loop, update temperature
+			ASSERT(get_temperature(&t_hotend, &t_bed));
+			update = 1;
+			break;
 		case 'q': // Quit the control loop
 			wprintw(cmd_win,"Hint: to quit, press F10 (instead of Q)\n");
 
@@ -257,7 +283,7 @@ int mesh_builder() {
 				set_z(mesh[y_pos][x_pos].z+z_offset);
 
 				// Update the overview
-				mesh_builder_print_mesh_status(overview_win, y_pos, x_pos, y_sel, x_sel);
+				mesh_builder_print_mesh_status(overview_win, y_pos, x_pos, y_sel, x_sel, t_hotend, t_bed);
 			}
 			break;
 		case KEY_F5:
@@ -330,7 +356,7 @@ int mesh_builder() {
 			// Get the current Z and store it in the mesh (so the view will update)
 			mesh[y_pos][x_pos].z = get_z() - z_offset;
 			// Re-print the overview
-			mesh_builder_print_mesh_status(overview_win, y_pos, x_pos, y_sel, x_sel);
+			mesh_builder_print_mesh_status(overview_win, y_pos, x_pos, y_sel, x_sel, t_hotend, t_bed);
 		}
 
 		// When we are all done, update the screen
@@ -361,9 +387,9 @@ stop:
  * @param y selected Y point in the mesh
  * @param x selected X point in the mesh
  */
-void mesh_builder_print_mesh_status(WINDOW *wnd, int y, int x, int y_sel, int x_sel) {
-	wprintw(wnd, "\nMesh size: %i (x) * %i (y)     - Mesh boundaries: (%0.2f, %0.2f) - (%0.2f, %0.2f)\n",
-			MESH_SIZE_X, MESH_SIZE_Y, MESH_MIN_X, MESH_MIN_Y, MESH_MAX_X, MESH_MAX_Y);
+void mesh_builder_print_mesh_status(WINDOW *wnd, int y, int x, int y_sel, int x_sel, double t_hotend, double t_bed) {
+	wprintw(wnd, "\nMesh size (X*Y): %i x %i - Bounds (mm): (%0.2f, %0.2f) x (%0.2f, %0.2f) - Hotend: %.02f°C - Bed: %.02f°C\n",
+			MESH_SIZE_X, MESH_SIZE_Y, MESH_MIN_X, MESH_MIN_Y, MESH_MAX_X, MESH_MAX_Y, t_hotend, t_bed);
 
 	for (int yy = MESH_SIZE_Y - 1; yy >= 0; yy--) {
 		for (int xx = 0; xx < MESH_SIZE_X; xx++) {

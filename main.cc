@@ -23,7 +23,7 @@ int zaxis_break_in();
 int pid_auto_tuning();
 
 int main(void) {
-	printf("RepRap Bed Level Tool by Berend Dekens\n");
+	printf("RepRap Bed Level Tool " VERSION " by Berend Dekens\n");
 	if(serial_open() < 0) return -1;
 	printf("Opened serial port\n");
 
@@ -80,7 +80,8 @@ int pid_auto_tuning() {
 	}
 
 	// Make sure the heating is off
-	set_temperature(0, 0.0);
+	set_hotend_temperature(0.0);
+	set_bed_temperature(0.0);
 
 	// Test if we should wait for the printer to cool first
 //	if(temp > start_temp) {
@@ -100,10 +101,10 @@ int pid_auto_tuning() {
 	print_pid();
 
 	printf("Setting testing temperature to %.0f degrees\n", test_temp);
-	set_temperature(0, test_temp);
+	set_hotend_temperature(test_temp);
 
 	printf("Waiting for printer to reach target temperature\n");
-	get_temperature(0, &temp);
+	get_temperature(&temp, NULL);
 	while(temp < test_temp) {
 		usleep(1000000);		// Delay 100 ms
 		get_temperature(0, &temp);
@@ -138,8 +139,8 @@ int pid_auto_tuning() {
 
 		// Safety: if something goes wrong, shut down the test
 		if(temp > abort_temp) {
-			printf("\nWARNING: MAXIMUM TEMPERATURE REACHED - ABORTING AUTOTUNE\n");
-			set_temperature(0, 0.0);
+			printf("\nWARNING: MAXIMUM HOTEND TEMPERATURE REACHED - ABORTING AUTOTUNE\n");
+			set_bed_temperature(0.0);
 			fclose(fh);
 			return -1;
 		}
@@ -183,7 +184,7 @@ int pid_auto_tuning() {
 	for(int j=0; j<t_id;j++) printf("%.1f, %.2f\n", (double)j/10.0, temps[j]);
 
 	printf("Target temperature reached, shutting down heating\n");
-	set_temperature(0,0.0);
+	set_bed_temperature(0.0);
 	enable_fan(true);
 	set_pid_i(i);
 	set_pid_d(d);

@@ -196,8 +196,17 @@ int serial_cmd(const char *cmd, char **reply) {
 							"-0.318,-0.461,-0.621,-0.710,-0.750,-0.837,-0.836,-0.961\n"
 							"ok\n");
 			}
+		} else if(strcmp(cmd, "M105\n") == 0) {
+			// Temperature request - return canned reply
+			message("DEMO MODE: command ok - returning fake temperature\n");
+
+			if(reply != NULL)
+				*reply = strdup("ok T:16.78 /20.00 B:23.45 /30.00 @:0 B@:0\n");
+			//message("DEMO MODE: temp string @ %p %s\n", reply, *reply);
 		} else {
 			message("DEMO MODE: command ok\n");
+			if(reply != NULL)
+				*reply = strdup("ok\n");
 		}
 		return 0;
 	}

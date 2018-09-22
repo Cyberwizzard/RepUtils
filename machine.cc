@@ -427,30 +427,83 @@ int enable_fan(bool on) {
 	return serial_cmd("M106 S0\n",NULL);
 }
 
-int get_temperature(const unsigned char heaterid, double *temp) {
-	char *reply,buf[100];
-	snprintf(buf,100,"M105 P%hhu\n", heaterid);
-	if(serial_cmd(buf,&reply) != 0) return -1;
+/**
+ * Get the printer temperatures
+ * Firmware: Marlin
+ *
+ * @param hotend_temp pointer to a double to store the hotend temperature in
+ * @param bed_temp pointer to a double to store the bed temperature in
+ */
+int get_temperature(double *hotend_temp, double* bed_temp) {
+	char *reply = NULL;
+	if(serial_cmd("M105\n",&reply) != 0) return -1;
 
 	// Find the location of the ':' which will be followed by the temperature
-	int pos_s = 0, pos_e = 0;
+	int pos_s = -1; // Separator position
+	int pos_e = 0; // End of temperature string
+	bool got_bed = false, got_hotend = false;
 	do {
 		if (reply[pos_e] == ':') pos_s = pos_e;
+		// Detect end of temperature string (there is always a space after the temp
+		else if(pos_s != -1 && reply[pos_e] == ' ') {
+			// Get the character before the separator
+			char type = reply[pos_s-1];
+			// Convert the space into a NULL to terminate the string for atof()
+			reply[pos_e] = 0;
+
+			// Determine where to store the temp
+			if(type == 'T') {
+				if(hotend_temp != NULL)
+					*hotend_temp = strtod(&reply[pos_s+1], NULL);
+				got_hotend = true;
+			} else if(type == 'B') {
+				if(bed_temp != NULL)
+					*bed_temp = strtod(&reply[pos_s+1], NULL);
+				got_bed = true;
+			}
+			//else - if none of the above silently ignore it
+
+			// Restore space
+			reply[pos_e] = ' ';
+			// Reset separator index
+			pos_s = -1;
+		}
+
 		pos_e++;
 	} while(reply[pos_e] != 0x0);
-	// Check for weird or empty reply
-	if(pos_e <= pos_s) return -1;
 
-	// Convert the value after the double colon to a double
-	*temp = atof(&reply[pos_s+1]);
-
-	return 0;
+	return (got_bed && got_hotend) ? 0 : 1;
 }
 
-int set_temperature(const unsigned char heaterid, const double temp) {
-	char *reply,buf[100];
+/**
+ * Set the hotend temperature - this command does not wait until the target temperature is reached
+ *
+ * Note: Teacup allows setting the bed temperature using ID 1
+ * @param temp The temperature to set the printer bed to
+ * @param heaterid Hotend ID to set the temperature on - if the machine only has one hotend, its usually ID 0
+ */
+int set_hotend_temperature(double temp, const unsigned char heaterid) {
+	char buf[100];
+	if(temp < 0) temp = 0;
+	if(temp > MAX_TEMP_HOTEND)
+		temp = MAX_TEMP_HOTEND;
+
 	snprintf(buf,100,"M104 P%hhu S%.0f\n", heaterid, temp);
-	return serial_cmd(buf,&reply);
+	return serial_cmd(buf,NULL);
+}
+
+/**
+ * Set the bed temperature - this command does not wait until the target temperature is reached
+ * @param temp The temperature to set the printer bed to
+ */
+int set_bed_temperature(double temp) {
+	char buf[100];
+	if(temp < 0) temp = 0;
+	if(temp > MAX_TEMP_BED)
+		temp = MAX_TEMP_BED;
+
+	snprintf(buf,100,"M140 S%.0f\n", temp);
+	return serial_cmd(buf,NULL);
 }
 
 /**

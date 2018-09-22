@@ -104,8 +104,29 @@ int mesh_disable();
 
 int enable_fan(bool on);
 
-int get_temperature(const unsigned char heaterid, double *temp);
-int set_temperature(const unsigned char heaterid, const double temp);
+/**
+ * Get the printer temperatures
+ * Firmware: Marlin
+ *
+ * @param hotend_temp pointer to a double to store the hotend temperature in
+ * @param bed_temp pointer to a double to store the bed temperature in
+ */
+int get_temperature(double *hotend_temp, double* bed_temp);
+
+/**
+ * Set the hotend temperature - this command does not wait until the target temperature is reached
+ *
+ * Note: Teacup allows setting the bed temperature using ID 1
+ * @param temp The temperature to set the printer bed to
+ * @param heaterid Hotend ID to set the temperature on - if the machine only has one hotend, its usually ID 0
+ */
+int set_hotend_temperature(double temp = 0, const unsigned char heaterid = 0);
+
+/**
+ * Set the bed temperature - this command does not wait until the target temperature is reached
+ * @param temp The temperature to set the printer bed to
+ */
+int set_bed_temperature(const double temp = 0);
 
 int set_pid_p(const double p);
 int set_pid_i(const int i);

@@ -43,7 +43,7 @@ all: RepBedTool
 RepBedTool: $(OBJS) $(USER_OBJS)
 	@echo 'Building target: $@'
 	@echo 'Invoking: Cross G++ Linker'
-	arm-linux-gnueabi-g++  -o "RepBedTool" $(OBJS) $(USER_OBJS) $(LIBS)
+	g++  -o "RepBedTool" $(OBJS) $(USER_OBJS) $(LIBS)
 	@echo 'Finished building target: $@'
 	@echo ' '
 

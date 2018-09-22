@@ -15,3 +15,5 @@
 # Eclipse project files
 .cproject
 .project
+/ReleaseARM/
+/Release/

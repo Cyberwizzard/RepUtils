@@ -8,7 +8,7 @@
 #ifndef MAIN_H_
 #define MAIN_H_
 
-#define VERSION "0.4"		// Version number for the program
+#define VERSION "0.4.1"		// Version number for the program
 
 #define DEMO_MODE 0  		// As testing UI features without a printer is hard, provide a dummy mode
 							// WARNING: With this enabled, the serial port and machine driver will pretend
@@ -20,6 +20,9 @@
 #define MAX_TEMP_BED    100
 #define PREHEAT_TEMP_HOTEND 125
 #define PREHEAT_TEMP_BED    85
+// Uncomment to automatically enable the fan when setting any temperature above 0 on the hotend
+#define ENABLE_AUTOCOOL_HOTEND
+#define AUTOCOOL_TEMP_THRESHOLD 40
 
 // Dimensional limits
 #define MAX_X 180.0f

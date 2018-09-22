@@ -488,6 +488,23 @@ int set_hotend_temperature(double temp, const unsigned char heaterid) {
 	if(temp > MAX_TEMP_HOTEND)
 		temp = MAX_TEMP_HOTEND;
 
+	// Auto-cooling: when enabling the hotend, turn on the fan as well for temperatures above AUTOCOOL_TEMP_THRESHOLD degrees
+	// Note: when switching off the hotend, the fan is left running unless the temperature is back at room level
+#ifdef ENABLE_AUTOCOOL_HOTEND
+	if(temp >= AUTOCOOL_TEMP_THRESHOLD) {
+		// Hot-end enabled, enable fan as well
+		enable_fan(true);
+	} else {
+		// Disabling hot-end; test if the temperature is low enough to switch off the fan
+		double t_hotend = 0;
+		get_temperature(&t_hotend, NULL);
+		if(t_hotend <= AUTOCOOL_TEMP_THRESHOLD) {
+			// Hotend cool enough, switch off fan as well
+			enable_fan(false);
+		}
+	}
+#endif
+
 	snprintf(buf,100,"M104 P%hhu S%.0f\n", heaterid, temp);
 	return serial_cmd(buf,NULL);
 }

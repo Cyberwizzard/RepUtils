@@ -156,8 +156,10 @@ int serial_open() {
 	// toggle the DTR line to trigger a reset at the printer (most hardware supports this)
 	set_reset_dtr();
 
-	message("Serial port opened - waiting for printer to start\n");
-	return serial_waitforok(false, 30);
+	//message("Serial port opened - waiting for printer to start\n");
+	//return serial_waitforok(false, 30);
+	message("Serial port opened - returning control\n");
+	return 0:
 }
 
 void serial_close() {
@@ -330,7 +332,7 @@ int serial_waitforok(bool flush, int timeout) {
 	}
 
 	const unsigned int buflen = 1000;
-	char buf [buflen+1]; // Ugly hack (+1) to make sure the buffer is always null-terminated
+	char buf [buflen+1]; 		// Ugly hack (+1) to make sure the buffer is always null-terminated
 	unsigned int bp = 0;		// Buffer pointer, tracks the number of bytes used in the buffer
 
 	if(serial_fd <= 0) {

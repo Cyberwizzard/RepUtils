@@ -358,9 +358,9 @@ int mesh_download(int slot, ty_meshpoint mesh[MESH_SIZE_Y][MESH_SIZE_X], WINDOW*
 			// Parse number string between lpos and pos into float
 			// Note: change comma into null to 'end' the numeric string at the comma
 			res_buf[pos] = 0;
-			mesh[row][col].z = atof(&res_buf[lpos]);
-			mesh[row][col].valid = 1;
-			if(wnd != NULL) { wprintw(wnd,"Parsed CSV: (%i, %i) => %.03f\n", col, row, mesh[row][col].z); wrefresh(wnd); }
+			mesh[MESH_SIZE_Y-row-1][col].z = atof(&res_buf[lpos]);
+			mesh[MESH_SIZE_Y-row-1][col].valid = 1;
+			if(wnd != NULL) { wprintw(wnd,"Parsed CSV: (%i, %i) => %.03f\n", col, MESH_SIZE_Y-row-1, mesh[MESH_SIZE_Y-row-1][col].z); wrefresh(wnd); }
 			// Revert to be able to print the whole buffer if we want to
 			res_buf[pos] = '\n';
 			// Update left position

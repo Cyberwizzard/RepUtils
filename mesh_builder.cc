@@ -388,7 +388,7 @@ stop:
  * @param x selected X point in the mesh
  */
 void mesh_builder_print_mesh_status(WINDOW *wnd, int y, int x, int y_sel, int x_sel, double t_hotend, double t_bed) {
-	wprintw(wnd, "\nMesh size (X*Y): %i x %i - Bounds (mm): (%0.2f, %0.2f) x (%0.2f, %0.2f) - Hotend: %.02f°C - Bed: %.02f°C\n",
+	wprintw(wnd, "\nMesh size (X*Y): %i x %i - Bounds (mm): (%0.2f, %0.2f) x (%0.2f, %0.2f) - Hotend: %.02f °C - Bed: %.02f °C\n",
 			MESH_SIZE_X, MESH_SIZE_Y, MESH_MIN_X, MESH_MIN_Y, MESH_MAX_X, MESH_MAX_Y, t_hotend, t_bed);
 
 	for (int yy = MESH_SIZE_Y - 1; yy >= 0; yy--) {

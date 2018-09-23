@@ -145,9 +145,11 @@ float get_z() {
 }
 
 int home_xy() {
+	char buf[100];
 	int res = serial_cmd("G28 X0 Y0\n", NULL);
 	if(res) return res;
-	res = serial_cmd("G01 X0 Y0\n", NULL);	// Home can be at the end as well; go to 0
+	snprintf(buf, 100, "G01 X0 Y0 F%0.1f\n", MAX_SPEED_X);
+	res = serial_cmd(buf, NULL);	// Home can be at the end as well; go to 0
 	if(res == 0) x = y = 0;
 	return res;
 }
@@ -161,25 +163,31 @@ int home_xyz() {
 }
 
 int home_x() {
+	char buf[100];
 	int res = serial_cmd("G28 X0\n", NULL);
 	if(res) return res;
-	res = serial_cmd("G01 X0\n", NULL);	// Home can be at the end as well; go to 0
+	snprintf(buf, 100, "G01 X0 F%0.1f\n", MAX_SPEED_X);
+	res = serial_cmd(buf, NULL);	// Home can be at the end as well; go to 0
 	if(res == 0) x = 0;
 	return res;
 }
 
 int home_y() {
+	char buf[100];
 	int res = serial_cmd("G28 Y0\n", NULL);
 	if(res) return res;
-	res = serial_cmd("G01 Y0\n", NULL);	// Home can be at the end as well; go to 0
+	snprintf(buf, 100, "G01 Y0 F%0.1f\n", MAX_SPEED_Y);
+	res = serial_cmd(buf, NULL);	// Home can be at the end as well; go to 0
 	if(res == 0) y = 0;
 	return res;
 }
 
 int home_z() {
+	char buf[100];
 	int res = serial_cmd("G28 Z0\n", NULL);
 	if(res) return res;
-	res = serial_cmd("G01 Z0\n", NULL);	// Home can be at the end as well; go to 0
+	snprintf(buf, 100, "G01 Z0 F%0.1f\n", MAX_SPEED_Z);
+	res = serial_cmd(buf, NULL);	// Home can be at the end as well; go to 0
 	if(res == 0) z = 0;
 	return res;
 }

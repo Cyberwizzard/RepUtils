@@ -289,7 +289,7 @@ int mesh_download(int slot, ty_meshpoint mesh[MESH_SIZE_Y][MESH_SIZE_X], WINDOW*
 	if(wnd != NULL) { wprintw(wnd,"Mesh reset OK\n"); wrefresh(wnd); }
 
 	// Fetch all mesh points in CSV format
-	if((err = serial_cmd("G29 T1\n", &res_buf))) return err;
+	if((err = serial_cmd("G29 T1\n", &res_buf, true))) return err;
 	if(wnd != NULL) { wprintw(wnd,"G29T OK\n"); wrefresh(wnd); }
 
 	// Scan the buffer until a line with at least one comma is found and only
@@ -339,9 +339,9 @@ int mesh_download(int slot, ty_meshpoint mesh[MESH_SIZE_Y][MESH_SIZE_X], WINDOW*
 			// Parse number string between lpos and pos into float
 			// Note: change comma into null to 'end' the numeric string at the comma
 			res_buf[pos] = 0;
-			mesh[row][col].z = atof(&res_buf[lpos]);
-			mesh[row][col].valid = 1;
-			if(wnd != NULL) { wprintw(wnd,"Parsed CSV: (%i, %i) => %.03f\n", col, row, mesh[row][col].z); wrefresh(wnd); }
+			mesh[MESH_SIZE_Y-row-1][col].z = atof(&res_buf[lpos]);
+			mesh[MESH_SIZE_Y-row-1][col].valid = 1;
+			if(wnd != NULL) { wprintw(wnd,"Parsed CSV: (%i, %i) => %.03f\n", col, row, mesh[MESH_SIZE_Y-row-1][col].z); wrefresh(wnd); }
 			// Revert to be able to print the whole buffer if we want to
 			res_buf[pos] = ',';
 			// Update left position

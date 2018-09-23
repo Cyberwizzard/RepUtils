@@ -10,7 +10,7 @@
 
 int serial_open();
 void serial_close();
-int serial_cmd(const char *cmd, char **reply);
+int serial_cmd(const char *cmd, char **reply, bool keepall = false);
 //int serial_cmd(const char *cmd);
 
 /**

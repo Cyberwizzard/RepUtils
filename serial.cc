@@ -178,8 +178,9 @@ void serial_close() {
  * Send a command over the serial port to the printer.
  * @param cmd Character buffer to send out
  * @param reply Pointer to a character buffer to fill the reply in (for commands that need to parse the response)
+ * @param keepall When false, discard serial lines not starting with 'ok'; when true, keep all serial data up to and including the first line starting with 'ok'
  */
-int serial_cmd(const char *cmd, char **reply) {
+int serial_cmd(const char *cmd, char **reply, bool keepall) {
 	if(DEMO_MODE) {
 		// Demo mode - pretend we send the command
 		message("> %s", cmd);
@@ -218,9 +219,10 @@ int serial_cmd(const char *cmd, char **reply) {
 		return 0;
 	}
 
-	const unsigned int buflen = 1000;
-	char buf [buflen+1]; // Ugly hack (+1) to make sure the buffer is always null-terminated
-	unsigned int bp = 0;		// Buffer pointer, points to the end of the data in the buffer
+	const unsigned int buflen = 1000;	// Size of the serial buffer to fill while searching for the 'ok'; if keepall = true, all serial data up to the line starting with the OK needs to fit within this many bytes
+	char buf [buflen+1];			// Ugly hack (+1) to make sure the buffer is always null-terminated
+	unsigned int bp = 0;			// Buffer pointer, points to the end of the data in the buffer
+	unsigned int lle = 0;			// Last line ending; points to the end of the last line parsed for the 'ok' - only used when keepall = true, otherwise this is always 0
 
 	if(serial_fd <= 0) {
 		error_message("error: serial port not open\n");
@@ -238,6 +240,8 @@ int serial_cmd(const char *cmd, char **reply) {
 	// Now loop until we read an 'ok' in the stream - this signals that
 	// the command was accepted.
 	while(bp < buflen) {
+		char *sbuf = NULL; // Sub-buffer pointer, points to the byte after the last line ending that was parsed and rejected in the serial buffer
+
 		int br=read(serial_fd, &buf[bp], buflen-bp);
 		// Debug: show whats in the buffer between reads
 		//message("debug (buf): %s\n", buf);
@@ -257,14 +261,18 @@ int serial_cmd(const char *cmd, char **reply) {
 		bp+=br;
 		buf[bp] = 0x0;	// Always make sure its \0 terminated to make a valid string
 
-		// Scan the buffer contents if there is at least space for 'ok' and it has a line ending.
+		// Set the last-line-ending position to the buffer
+		sbuf = &buf[lle];
+
+		// Scan the buffer contents if there is at least space for 'ok' (computed from the last-line-ending (lle) - only 
+		// non-zero when keepall = true) and it has a line ending (starting after the last-line-ending).
 		// Without a line ending, the reply of the printer is incomplete.
-		while (bp > 2 && strchr(buf, '\n') != NULL){
+		while ((bp-lle) > 2 && strchr(sbuf, '\n') != NULL){
 			// It should start with ok; if not, we discard the line.
-			if(strcasestr(buf,"ok") != buf) {
+			if(strcasestr(sbuf,"ok") != sbuf) {
 				// This line does not start with 'ok': search for a newline.
 				int lineend = -1;
-				for(unsigned int i=0;i<bp;i++) {
+				for(unsigned int i=lle;i<bp;i++) {
 					// Scan up to the end of the data in the buffer, or \0 (which should not happen)
 					if(buf[i]==0x0) break;
 					if(buf[i]=='\n') {
@@ -276,26 +284,30 @@ int serial_cmd(const char *cmd, char **reply) {
 				// Test if a line ending was found
 				if(lineend >= 0) {
 					// Print the discarded data
-					message("* %.*s\n", lineend, buf);
+					message("* %.*s\n", lineend-lle, sbuf);
 
-					// Now move all bytes after the lineend in the buffer
-					for(unsigned int i=lineend+1;i<bp;i++)
-						buf[i-lineend-1] = buf[i];
-					// Adjust pointer and ending
-					bp = bp - lineend - 1;
+					// When keepall=false, discard bytes from ignored lines
+					if(!keepall) {
+						// Now move all bytes after the lineend in the buffer
+						for(unsigned int i=lineend+1;i<bp;i++) {
+							buf[i-lineend-1] = buf[i];
+						}
 
-					// Erase the end of the buffer
-					//for(unsigned int i=bp;i<buflen;i++) buf[i] = 0;
-					// Adjust pointer and ending
-					unsigned int old_bp = bp;
-					bp = bp - lineend - 1;
+						unsigned int old_bp = bp;
+						bp = bp - lineend - 1;
 
-					// Erase the end of the buffer
-					for(unsigned int i=bp;i<=old_bp;i++) buf[i] = 0x0;
+						// Erase the end of the buffer
+						for(unsigned int i=bp;i<=old_bp;i++) buf[i] = 0x0;
+					} else {
+						// Keeping all data, just move the last-line-ending positions
+						lle = lineend + 1;
+						// Update sbuf to point to the new last-line-ending
+						sbuf = &buf[lle];
+					}
 				}
 			} else {
 				// Print the reply
-				message("< %s\n", buf);
+				message("< %s\n", sbuf);
 
 				// Buffer starts with 'ok' and has a line ending, return the buffer.
 				if(reply != NULL) {
@@ -336,7 +348,7 @@ int serial_waitforok(bool flush, int timeout) {
 		return 0;
 	}
 
-	const unsigned int buflen = 2000; // Buffer needs to be big enough to buffer the printer start blurp
+	const unsigned int buflen = 1000; // Buffer needs to be big enough to buffer the printer start blurp
 	char buf [buflen+1]; 		// Ugly hack (+1) to make sure the buffer is always null-terminated
 	unsigned int bp = 0;		// Buffer pointer, tracks the number of bytes used in the buffer
 
@@ -380,8 +392,8 @@ int serial_waitforok(bool flush, int timeout) {
 		// Scan the buffer contents if there is at least space for 'ok' and it has a line ending.
 		// Without a line ending, the reply of the printer is incomplete.
 		while (bp > 2 && strchr(buf, '\n') != NULL){
-			// It should start with ok; if not, we discard the line.
-			if(strcasestr(buf,"ok") != buf) {
+			// Starting line should say 'start'; if not, we discard the line.
+			if(strcasestr(buf,"start") != buf) {
 				// This line does not start with 'ok': search for a newline.
 				int lineend = -1;
 				for(unsigned int i=0;i<bp;i++) {
@@ -396,6 +408,7 @@ int serial_waitforok(bool flush, int timeout) {
 				// Test if a line ending was found
 				if(lineend >= 0) {
 					// Print the discarded data
+					message("Dump\n");
 					message("* %.*s", lineend, buf);
 
 					// Now move all bytes after the lineend in the buffer to

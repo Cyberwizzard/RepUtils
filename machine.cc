@@ -281,7 +281,7 @@ int mesh_download(int slot, ty_meshpoint mesh[MESH_SIZE_Y][MESH_SIZE_X], WINDOW*
 	if(wnd != NULL) { wprintw(wnd,"Mesh reset OK\n"); wrefresh(wnd); }
 
 	// Fetch all mesh points in CSV format
-	if((err = serial_cmd("G29 T1\n", &res_buf))) return err;
+	if((err = serial_cmd("G29 T1\n", &res_buf, true))) return err;
 	if(wnd != NULL) { wprintw(wnd,"G29T OK\n"); wrefresh(wnd); }
 
 	// Scan the buffer until a line with at least one comma is found and only

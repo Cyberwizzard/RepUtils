@@ -35,7 +35,7 @@
 // Default speeds
 #define MAX_SPEED_X 5000.0f
 #define MAX_SPEED_Y 5000.0f
-#define MAX_SPEED_Z 600.0f
+#define MAX_SPEED_Z 300.0f
 
 // Mesh generation: define properties of the mesh
 #define MESH_MIN_X    1.0f

@@ -107,7 +107,7 @@ int mesh_builder() {
 	{
 		int zoi = 0;
 		// int utility_ask_int(WINDOW *wnd, string q, int *ans, int def, int min, int max, int step)
-		if(!utility_ask_int(cmd_win, "How far can the toolhead be lowered below the Z end-stop in mm?", &zoi, 10, 0, 20, 1)) goto stop;
+		if(!utility_ask_int(cmd_win, "How far can the toolhead be lowered below the Z end-stop in mm?", &zoi, DEFAULT_BOUND_Z, 0, LOWER_BOUND_Z, 1)) goto stop;
 		z_offset = (float)zoi;
 		wprintw(cmd_win,"Using %.2f mm as the absolute lowest position\n", -z_offset);
 		wrefresh(cmd_win);
@@ -115,7 +115,7 @@ int mesh_builder() {
 	// Raise height for XY moves (assuming the bed is below the Z opto position for all XY, this is likely 0 for everyone)
 	{
 		int zoi = 0;
-		if(!utility_ask_int(cmd_win, "During XY moves, how far should the toolhead be raised compared to the Z end-stop?", &zoi, 0, 0, 10, 1)) goto stop;
+		if(!utility_ask_int(cmd_win, "During XY moves, how far should the toolhead be raised compared to the Z end-stop?", &zoi, DEFAULT_RAISE_Z, 0, 10, 1)) goto stop;
 		zraise = (float)zoi;
 		wprintw(cmd_win,"Using %.2f mm as the repositioning height\n", zraise);
 		wrefresh(cmd_win);

@@ -268,7 +268,7 @@ int mesh_disable() {
  * @param wnd Window handle from ncurses to print debug info into (when NULL no debug info is generated)
  */
 int mesh_download(int slot, ty_meshpoint mesh[MESH_SIZE_Y][MESH_SIZE_X], WINDOW* wnd) {
-	int err = 0, row = 0, col = 0, lpos = 0, only_valid = 1, has_comma = 0;
+	int err = 0, row = 0, col = 0, lpos = 0, only_valid = 1;
 	char cmd_buf[100];
 	char *res_buf = NULL;
 
@@ -292,33 +292,31 @@ int mesh_download(int slot, ty_meshpoint mesh[MESH_SIZE_Y][MESH_SIZE_X], WINDOW*
 	if((err = serial_cmd("G29 T1\n", &res_buf, true))) return err;
 	if(wnd != NULL) { wprintw(wnd,"G29T OK\n"); wrefresh(wnd); }
 
-	// Scan the buffer until a line with at least one comma is found and only
-	// numbers and dots (other characters indicate status lines)
-	for (int p = 0; p < 4096; p++) {
+	// Scan the buffer until a line with only numbers, dots, spaces and commas - anything else indicates a comment line
+	for (int p = 0; p < SERIAL_REPLY_BUFFER_SIZE; p++) {
 		if(res_buf[p] == '\n') {
-			// Check if the previous line was valid (only comma delimited numbers)
-			if(only_valid && has_comma) break;
+			// Check if the previous line was valid (only comma delimited numbers and enough valid characters to be a number line)
+			if(only_valid > 6) break;
 
 			// Previous line was not a CSV list of floats, continue scanning...
 
-			// New line character - clear flags
-			only_valid = 1;
-			has_comma = 0;
+			// New line character - clear flag
+			only_valid = 0;
 			// Update the line start in the 'left pos' flag
 			lpos = p+1;
-		} else if(res_buf[p] == '\r') {
-			// Carriage return - swallow this character silently
-		} else if(res_buf[p] == ',') {
-			has_comma = 1;
 		} else if((res_buf[p] >= '0' && res_buf[p] <= '9') || res_buf[p] == '.' || res_buf[p] == '-') {
 			// Numeric characters - silently swallow as these are allowed
+			if(only_valid >= 0) only_valid += 1;
+		} else if(res_buf[p] == ' ' || res_buf[p] == ',' || res_buf[p] == '\r') {
+			// Whitespace or separator characters - silently swallow as these are also allowed
+			if(only_valid >= 0) only_valid += 1;
 		} else {
 			// Unknown characters; mark line as invalid
-			only_valid = 0;
+			only_valid = -1;
 		}
 	}
-	if(!only_valid || !has_comma) {
-		// No valid lines found in the first 4kB of output...
+	if(only_valid <= 6) {
+		// No valid lines found in the first 4kB of output (or a very short line of potentially valid data - also reject that)...
 		free(res_buf);
 		return 1;
 	}
@@ -327,7 +325,7 @@ int mesh_download(int slot, ty_meshpoint mesh[MESH_SIZE_Y][MESH_SIZE_X], WINDOW*
 	// lpos now points to the first line of CSV data describing the mesh
 
 	// loop over the buffer to find either a comma or a newline
-	for(int pos=lpos+1; pos<4096; pos++) {
+	for(int pos=lpos+1; pos<SERIAL_REPLY_BUFFER_SIZE; pos++) {
 		if(res_buf[pos] == 0) {
 			// End of string - should never occur when parsing numbers...
 			free(res_buf);
@@ -335,24 +333,57 @@ int mesh_download(int slot, ty_meshpoint mesh[MESH_SIZE_Y][MESH_SIZE_X], WINDOW*
 		} else if(res_buf[pos] == '\r') {
 			// Carriage return is not needed, ignore it by replacing it with a space
 			res_buf[pos] = ' ';
-		} else if(res_buf[pos] == ',') {
+		} else if(res_buf[pos] == ',' || res_buf[pos] == ' ') {
 			// Parse number string between lpos and pos into float
-			// Note: change comma into null to 'end' the numeric string at the comma
+			// Note: change comma or space into null to 'end' the numeric string at the comma
 			res_buf[pos] = 0;
 			mesh[MESH_SIZE_Y-row-1][col].z = atof(&res_buf[lpos]);
 			mesh[MESH_SIZE_Y-row-1][col].valid = 1;
 			if(wnd != NULL) { wprintw(wnd,"Parsed CSV: (%i, %i) => %.03f\n", col, row, mesh[MESH_SIZE_Y-row-1][col].z); wrefresh(wnd); }
 			// Revert to be able to print the whole buffer if we want to
-			res_buf[pos] = ',';
-			// Update left position
-			lpos = pos+1;
-			// Move column
-			col++;
-			// Sanity
-			if(col >= MESH_SIZE_X) {
-				// More mesh point columns in printer result than we allow!
-				free(res_buf);
-				return 3;
+			res_buf[pos] = ' ';
+			// Update left position; support multiple separators after each other by scanning for the first non-separator character
+			while(res_buf[pos+1] == ',' || res_buf[pos+1] == ' ') {
+				// Skip pos to the next position
+				pos++;
+				// Safety: do not run out of the buffer
+				if(pos >= SERIAL_REPLY_BUFFER_SIZE) {
+					free(res_buf);
+					return 5;
+				}
+			}
+			// If the last number in the row had a trailing space, detect that now
+			if(res_buf[pos+1] == '\n') {
+				// Update left position to the start of the next line
+				lpos = pos+2;
+				// Reset column
+				col = 0;
+				// Move row
+				row++;
+
+				// End of mesh test
+				if(row == MESH_SIZE_Y) {
+					break;
+				}
+
+				// Sanity
+				if(row >= MESH_SIZE_Y) {
+					// More mesh point rows in printer result than we allow!
+					free(res_buf);
+					return 4;
+				}
+			} else {
+				// Normal start of a new number - continue parsing the byte stream:
+				// Set the 'left position' to the start of the number (at pos+1)
+				lpos = pos+1;
+				// Move column
+				col++;
+				// Sanity
+				if(col >= MESH_SIZE_X) {
+					// More mesh point columns in printer result than we allow!
+					free(res_buf);
+					return 3;
+				}
 			}
 		} else if(res_buf[pos] == '\n') {
 			// Parse number string between lpos and pos into float

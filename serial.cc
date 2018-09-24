@@ -104,7 +104,7 @@ void set_reset_dtr() {
     ioctl(serial_fd, TIOCMSET, &status);
 
     // Wait...
-    usleep(100);
+    usleep(10000);
 
     // Set the DTR bit high again
     status |= TIOCM_DTR;
@@ -191,17 +191,27 @@ int serial_cmd(const char *cmd, char **reply, bool keepall) {
 			message("DEMO MODE: command ok - returning fake mesh data\n");
 
 			if(reply != NULL) {
+				//*reply = strdup("\n"
+				//			"Bed Topography Report for CSV:\n"
+				//			"\n"
+				//			"0.086,-0.091,-0.281,-0.369,-0.514,-0.610,-0.619,-0.719\n"
+				//			"-0.018,-0.176,-0.307,-0.423,-0.528,-0.569,-0.633,-0.662\n"
+				//			"-0.081,-0.261,-0.340,-0.432,-0.558,-0.612,-0.670,-0.607\n"
+				//			"-0.107,-0.244,-0.383,-0.457,-0.568,-0.594,-0.705,-0.683\n"
+				//			"-0.128,-0.289,-0.417,-0.522,-0.613,-0.702,-0.738,-0.821\n"
+				//			"-0.120,-0.274,-0.453,-0.550,-0.649,-0.743,-0.804,-0.892\n"
+				//			"-0.217,-0.383,-0.596,-0.661,-0.806,-0.877,-0.935,-0.992\n"
+				//			"-0.318   -0.461   -0.621   -0.710 , -0.750     ,   -0.837,   -0.836,  -0.961  \n"
+				//			"ok\n");
+
 				*reply = strdup("\n"
 							"Bed Topography Report for CSV:\n"
 							"\n"
-							"0.086,-0.091,-0.281,-0.369,-0.514,-0.610,-0.619,-0.719\n"
-							"-0.018,-0.176,-0.307,-0.423,-0.528,-0.569,-0.633,-0.662\n"
-							"-0.081,-0.261,-0.340,-0.432,-0.558,-0.612,-0.670,-0.607\n"
-							"-0.107,-0.244,-0.383,-0.457,-0.568,-0.594,-0.705,-0.683\n"
-							"-0.128,-0.289,-0.417,-0.522,-0.613,-0.702,-0.738,-0.821\n"
-							"-0.120,-0.274,-0.453,-0.550,-0.649,-0.743,-0.804,-0.892\n"
-							"-0.217,-0.383,-0.596,-0.661,-0.806,-0.877,-0.935,-0.992\n"
-							"-0.318,-0.461,-0.621,-0.710,-0.750,-0.837,-0.836,-0.961\n"
+							"0.086,-0.091,-0.281,-0.369,-0.514\n"
+							"-0.018,-0.176,-0.307,-0.423,-0.528\n"
+							"-0.081,-0.261,-0.340,-0.432,-0.558\n"
+							"-0.107,-0.244,-0.383,-0.457,-0.568\n"
+							"-0.710 , -0.750     ,   -0.837,   -0.836,  -0.961  \n"
 							"ok\n");
 			}
 		} else if(strcmp(cmd, "M105\n") == 0) {
@@ -219,7 +229,7 @@ int serial_cmd(const char *cmd, char **reply, bool keepall) {
 		return 0;
 	}
 
-	const unsigned int buflen = 1000;	// Size of the serial buffer to fill while searching for the 'ok'; if keepall = true, all serial data up to the line starting with the OK needs to fit within this many bytes
+	const unsigned int buflen = SERIAL_REPLY_BUFFER_SIZE;	// Size of the serial buffer to fill while searching for the 'ok'; if keepall = true, all serial data up to the line starting with the OK needs to fit within this many bytes
 	char buf [buflen+1];			// Ugly hack (+1) to make sure the buffer is always null-terminated
 	unsigned int bp = 0;			// Buffer pointer, points to the end of the data in the buffer
 	unsigned int lle = 0;			// Last line ending; points to the end of the last line parsed for the 'ok' - only used when keepall = true, otherwise this is always 0
@@ -408,7 +418,6 @@ int serial_waitforok(bool flush, int timeout) {
 				// Test if a line ending was found
 				if(lineend >= 0) {
 					// Print the discarded data
-					message("Dump\n");
 					message("* %.*s", lineend, buf);
 
 					// Now move all bytes after the lineend in the buffer to
